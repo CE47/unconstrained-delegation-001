@@ -1,0 +1,2888 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#090d13"/>
+<meta name="description" content="CTIA guided lab: internal port scan and lateral movement detection, analysed in a real bash terminal against real log files."/>
+<title>CTIA Guided Lab · unconstrained-delegation-001</title>
+<link rel="stylesheet" href="vendor_xterm.css"/>
+<style>
+/* ===========================================================================
+   1. DESIGN TOKENS
+   =========================================================================== */
+:root{
+  --font-sans: ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  --font-mono: ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --r-xs:6px; --r-sm:9px; --r-md:13px; --r-lg:18px; --r-full:999px;
+  --dur:.22s; --ease:cubic-bezier(.22,.61,.36,1);
+  --rail-w:266px; --peek:58px; --dock:320px;
+  --tap:44px;
+}
+html[data-theme="dark"]{
+  --bg:#090d13;
+  --surface:#0f1620;
+  --surface-2:#141d29;
+  --surface-3:#1b2634;
+  --line:#1f2b3a;
+  --line-2:#2b3b4e;
+  --text:#e7eef7;
+  --dim:#9db0c4;
+  --faint:#6b8099;
+  --accent:#57c8ff;
+  --accent-2:#7ee0c8;
+  --on-accent:#04131d;
+  --accent-wash:rgba(87,200,255,.11);
+  --good:#46d38a; --good-wash:rgba(70,211,138,.10);
+  --warn:#f5b73d; --warn-wash:rgba(245,183,61,.10);
+  --bad:#ff6f6f;  --bad-wash:rgba(255,111,111,.10);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 10px 30px -12px rgba(0,0,0,.75);
+  --shadow-3:0 24px 60px -24px rgba(0,0,0,.85);
+  --grid:rgba(255,255,255,.022);
+}
+html[data-theme="light"]{
+  --bg:#eef1f6;
+  --surface:#ffffff;
+  --surface-2:#f6f8fb;
+  --surface-3:#e9eff7;
+  --line:#dde5ee;
+  --line-2:#c4d1e0;
+  --text:#0d1a28;
+  --dim:#4c5f74;
+  --faint:#6e8296;
+  --accent:#0a6cad;
+  --accent-2:#0c7a5e;
+  --on-accent:#ffffff;
+  --accent-wash:rgba(10,108,173,.08);
+  --good:#0d7a4a; --good-wash:rgba(13,122,74,.09);
+  --warn:#8a5d00; --warn-wash:rgba(138,93,0,.09);
+  --bad:#bb2f28; --bad-wash:rgba(187,47,40,.08);
+  --shadow-1:0 1px 2px rgba(16,32,54,.07);
+  --shadow-2:0 10px 26px -14px rgba(16,32,54,.28);
+  --shadow-3:0 24px 54px -26px rgba(16,32,54,.34);
+  --grid:rgba(16,32,54,.028);
+}
+
+/* ===========================================================================
+   2. BASE
+   =========================================================================== */
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; font-family:var(--font-sans); background:var(--bg); color:var(--text);
+  line-height:1.6; font-size:15px; -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column; height:100dvh; overflow:hidden;
+  background-image:
+    radial-gradient(1100px 620px at 82% -12%, var(--accent-wash), transparent 62%),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:auto, 34px 34px, 34px 34px;
+}
+h1,h2,h3,h4{margin:0; font-weight:650; letter-spacing:-.011em; line-height:1.25}
+p{margin:0 0 .85em}
+p:last-child{margin-bottom:0}
+a{color:var(--accent)}
+code,kbd{font-family:var(--font-mono)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-xs)}
+::selection{background:var(--accent); color:var(--on-accent)}
+.skip{
+  position:fixed; left:-999px; top:8px; z-index:200; background:var(--accent); color:var(--on-accent);
+  padding:10px 16px; border-radius:var(--r-sm); font-weight:650; text-decoration:none;
+}
+.skip:focus{left:12px}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ===========================================================================
+   3. TOP BAR
+   =========================================================================== */
+.topbar{
+  flex:0 0 auto; display:flex; align-items:center; gap:14px;
+  padding:0 18px; height:60px; background:color-mix(in srgb,var(--surface) 86%,transparent);
+  backdrop-filter:blur(14px); border-bottom:1px solid var(--line); position:relative; z-index:40;
+}
+.brand{display:flex; align-items:center; gap:11px; min-width:0}
+.mark{
+  width:34px;height:34px;flex:0 0 34px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(145deg,var(--accent),var(--accent-2)); color:var(--on-accent);
+  font:800 11px/1 var(--font-mono); letter-spacing:.04em; box-shadow:var(--shadow-1);
+}
+.brand-txt{min-width:0}
+.brand-id{font:600 11px/1.3 var(--font-mono); color:var(--faint); letter-spacing:.04em; text-transform:uppercase}
+.brand-name{font-size:14.5px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.topbar-mid{flex:1; display:flex; align-items:center; gap:12px; min-width:0}
+.meter{flex:1; min-width:60px; max-width:420px; height:6px; border-radius:var(--r-full);
+       background:var(--surface-3); overflow:hidden; border:1px solid var(--line)}
+.meter > i{display:block; height:100%; width:0; border-radius:inherit;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .3s var(--ease)}
+.meter-lbl{font:600 11.5px/1 var(--font-mono); color:var(--dim); white-space:nowrap; letter-spacing:.02em}
+.topbar-right{display:flex; align-items:center; gap:8px}
+
+.pill{
+  display:inline-flex; align-items:center; gap:7px; height:32px; padding:0 12px;
+  border-radius:var(--r-full); border:1px solid var(--line-2); background:var(--surface-2);
+  font:600 11.5px/1 var(--font-sans); letter-spacing:.02em; color:var(--dim); white-space:nowrap;
+  cursor:pointer; transition:border-color var(--dur),color var(--dur),background var(--dur);
+}
+.pill:hover{border-color:var(--accent); color:var(--text)}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:0 0 7px}
+.pill[data-state="searching"]{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.pill[data-state="searching"] .dot{background:var(--warn); animation:pulse 1.1s infinite}
+.pill[data-state="live"]{color:var(--good);border-color:color-mix(in srgb,var(--good) 42%,transparent);
+  background:var(--good-wash)}
+.pill[data-state="live"] .dot{background:var(--good); box-shadow:0 0 0 3px color-mix(in srgb,var(--good) 22%,transparent)}
+.pill[data-state="down"]{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,transparent);background:var(--bad-wash)}
+.pill[data-state="down"] .dot{background:var(--bad)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.icon-btn{
+  width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;border-radius:var(--r-sm);
+  border:1px solid var(--line); background:var(--surface-2); color:var(--dim); cursor:pointer;
+  font-size:14px; transition:var(--dur);
+}
+.icon-btn:hover{color:var(--text); border-color:var(--line-2); background:var(--surface-3)}
+
+/* ===========================================================================
+   4. SHELL LAYOUT
+   =========================================================================== */
+.shell{flex:1; min-height:0; display:flex; overflow:hidden}
+
+/* --- step rail --- */
+.rail{
+  flex:0 0 var(--rail-w); width:var(--rail-w); border-right:1px solid var(--line);
+  background:color-mix(in srgb,var(--surface) 60%,transparent);
+  display:flex; flex-direction:column; min-height:0;
+}
+.rail-head{padding:14px 16px 10px; border-bottom:1px solid var(--line)}
+.eyebrow{
+  font:700 10.5px/1 var(--font-sans); letter-spacing:.13em; text-transform:uppercase;
+  color:var(--faint); margin:0 0 4px; display:block;
+}
+.rail-title{font-size:13px; font-weight:650; color:var(--text)}
+.rail-list{flex:1; overflow-y:auto; padding:10px 10px 20px; scrollbar-width:thin}
+.rail-phase{
+  font:700 10px/1 var(--font-sans); letter-spacing:.14em; text-transform:uppercase;
+  color:var(--faint); padding:16px 8px 7px; display:flex; align-items:center; gap:8px;
+}
+.rail-phase::after{content:""; flex:1; height:1px; background:var(--line)}
+.rail-phase:first-child{padding-top:4px}
+.rail-item{
+  display:flex; gap:10px; align-items:flex-start; width:100%; text-align:left;
+  padding:8px 9px; border-radius:var(--r-sm); border:1px solid transparent;
+  background:none; color:var(--dim); font:inherit; font-size:12.8px; line-height:1.4;
+  cursor:pointer; transition:background var(--dur),color var(--dur),border-color var(--dur);
+}
+.rail-item:hover{background:var(--surface-2); color:var(--text)}
+.rail-num{
+  flex:0 0 22px; height:22px; border-radius:var(--r-xs); display:grid; place-items:center;
+  font:700 11px/1 var(--font-mono); background:var(--surface-3); color:var(--faint);
+  border:1px solid var(--line); margin-top:1px; transition:var(--dur);
+}
+.rail-item[data-state="done"] .rail-num{color:var(--good); border-color:color-mix(in srgb,var(--good) 35%,transparent); background:var(--good-wash)}
+.rail-item[data-state="done"] .rail-txt{color:var(--dim)}
+.rail-item[aria-current="true"]{
+  background:var(--accent-wash); border-color:color-mix(in srgb,var(--accent) 32%,transparent); color:var(--text);
+}
+.rail-item[aria-current="true"] .rail-num{background:var(--accent); color:var(--on-accent); border-color:var(--accent)}
+.rail-txt{min-width:0}
+
+/* --- lesson --- */
+.lesson{flex:1; min-width:0; overflow-y:auto; scroll-behavior:smooth; scrollbar-width:thin}
+.lesson-inner{max-width:820px; margin:0 auto; padding:26px 28px 34px}
+.step-head{margin-bottom:18px}
+.step-crumbs{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:11px}
+.crumb{
+  font:700 10.5px/1 var(--font-sans); letter-spacing:.12em; text-transform:uppercase;
+  color:var(--accent); background:var(--accent-wash); border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
+  padding:5px 9px; border-radius:var(--r-full);
+}
+.crumb.phase{color:var(--faint); background:var(--surface-2); border-color:var(--line)}
+.step-title{font-size:clamp(21px,2.6vw,27px); letter-spacing:-.02em}
+.step-goal{margin-top:9px; color:var(--dim); font-size:15px; max-width:64ch}
+.tags{display:flex; gap:7px; flex-wrap:wrap; margin-top:13px}
+.tag{
+  display:inline-flex; align-items:center; gap:6px; font:600 11px/1 var(--font-mono);
+  padding:5px 9px; border-radius:var(--r-xs); background:var(--surface-2);
+  border:1px solid var(--line); color:var(--dim);
+}
+.tag b{color:var(--accent); font-weight:700}
+.prose{font-size:14.6px; color:var(--text)}
+.prose code, .inline-code{
+  background:var(--surface-3); border:1px solid var(--line); color:var(--text);
+  padding:1px 6px; border-radius:var(--r-xs); font-size:12.6px; word-break:break-word;
+}
+.prose strong{font-weight:650}
+.prose ul{margin:.3em 0 .9em; padding-left:1.15em}
+.prose li{margin:.28em 0}
+.fieldlist{display:grid; gap:2px; margin:12px 0; padding:13px 15px; border-radius:var(--r-md);
+  background:var(--surface-2); border:1px solid var(--line)}
+.fieldlist .fl-head{font:700 10px/1 var(--font-sans); letter-spacing:.14em; text-transform:uppercase;
+  color:var(--faint); margin-bottom:6px}
+.fieldrow{display:grid; grid-template-columns:auto 1fr; gap:2px 12px; font-size:13px; margin:0}
+.fieldrow dt{font:600 12px/1.7 var(--font-mono); color:var(--accent-2); white-space:nowrap}
+.fieldrow dd{margin:0; color:var(--dim); font-size:13px; line-height:1.7}
+
+/* --- command blocks --- */
+.cmd{
+  position:relative; display:flex; align-items:flex-start; gap:12px;
+  margin:12px 0; padding:11px 12px; border-radius:var(--r-md);
+  background:var(--surface-2); border:1px solid var(--line); box-shadow:var(--shadow-1);
+  transition:border-color var(--dur),background var(--dur);
+}
+.cmd:hover{border-color:var(--line-2)}
+.cmd:focus-within{border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.cmd[data-ran="1"]{border-left:3px solid var(--good); background:var(--good-wash)}
+.cmd-ico{
+  flex:0 0 auto; width:22px; height:22px; border-radius:var(--r-xs); display:grid; place-items:center;
+  background:var(--surface-3); color:var(--accent); font:700 12px/1 var(--font-mono); margin-top:1px;
+}
+.cmd-body{flex:1; min-width:0}
+.cmd-text{
+  font:13px/1.62 var(--font-mono); color:var(--text); white-space:pre-wrap;
+  overflow-wrap:anywhere; word-break:break-word; display:block;
+}
+.cmd-text::before{content:"$ "; color:var(--accent-2); font-weight:700}
+.cmd-note{margin-top:6px; font-size:12.4px; color:var(--faint); line-height:1.5}
+.cmd-actions{display:flex; gap:6px; flex:0 0 auto}
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  height:32px; padding:0 13px; border-radius:var(--r-sm); border:1px solid var(--line-2);
+  background:var(--surface-3); color:var(--text); font:600 12.5px/1 var(--font-sans);
+  cursor:pointer; transition:var(--dur); white-space:nowrap;
+}
+.btn:hover{border-color:var(--accent); color:var(--accent)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.08); color:var(--on-accent)}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.42; cursor:not-allowed; filter:none}
+.btn-row{display:flex; gap:10px; flex-wrap:wrap}
+
+/* --- callouts --- */
+.callout{
+  margin:16px 0; padding:13px 15px 13px 16px; border-radius:var(--r-md);
+  border:1px solid var(--line); border-left:3px solid var(--faint); background:var(--surface-2);
+  font-size:13.6px; line-height:1.62;
+}
+.callout .co-head{
+  display:flex; align-items:center; gap:8px; margin-bottom:5px;
+  font:700 10.5px/1 var(--font-sans); letter-spacing:.13em; text-transform:uppercase; color:var(--faint);
+}
+.callout.check{border-left-color:var(--good); background:var(--good-wash)}
+.callout.check .co-head{color:var(--good)}
+.callout.tip{border-left-color:var(--accent); background:var(--accent-wash)}
+.callout.tip .co-head{color:var(--accent)}
+.callout.warn{border-left-color:var(--warn); background:var(--warn-wash)}
+.callout.warn .co-head{color:var(--warn)}
+.callout .co-body{color:var(--text)}
+.callout .co-body code,.co-body code{background:var(--surface-3);border:1px solid var(--line);padding:1px 5px;
+  border-radius:var(--r-xs);font-size:12.2px}
+
+/* --- timeline --- */
+.timeline{position:relative; margin:18px 0 6px; padding-left:22px}
+.timeline::before{content:""; position:absolute; left:6px; top:6px; bottom:6px; width:2px;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2),transparent)}
+.tl-item{position:relative; padding:0 0 14px}
+.tl-item::before{
+  content:""; position:absolute; left:-20px; top:6px; width:10px; height:10px; border-radius:50%;
+  background:var(--surface); border:2px solid var(--accent);
+}
+.tl-item[data-sev="bad"]::before{border-color:var(--bad)}
+.tl-item[data-sev="good"]::before{border-color:var(--good)}
+.tl-time{font:700 12px/1.4 var(--font-mono); color:var(--accent)}
+.tl-item[data-sev="bad"] .tl-time{color:var(--bad)}
+.tl-txt{font-size:13.4px; color:var(--dim); line-height:1.55}
+.tl-txt code{background:var(--surface-3);border:1px solid var(--line);padding:1px 5px;
+  border-radius:var(--r-xs);font-size:12px}
+
+/* --- notes --- */
+.notes{margin:20px 0 4px}
+.notes-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:7px}
+.notes-head .eyebrow{margin:0}
+.notes textarea{
+  width:100%; min-height:74px; resize:vertical; padding:11px 12px; border-radius:var(--r-md);
+  border:1px solid var(--line); background:var(--surface-2); color:var(--text);
+  font:13.4px/1.6 var(--font-sans);
+}
+.notes textarea::placeholder{color:var(--faint)}
+.notes textarea:focus{border-color:var(--accent); outline:none; background:var(--surface)}
+.saved{font:600 11px/1 var(--font-mono); color:var(--good); opacity:0; transition:opacity .3s}
+.saved.on{opacity:1}
+
+/* --- tables --- */
+.tbl-wrap{overflow-x:auto; margin:14px 0; border-radius:var(--r-md); border:1px solid var(--line)}
+table{border-collapse:collapse; width:100%; font-size:13px; min-width:440px}
+th,td{padding:9px 12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top}
+th{background:var(--surface-2); font:700 10.5px/1.4 var(--font-sans); letter-spacing:.11em;
+   text-transform:uppercase; color:var(--faint)}
+tbody tr:last-child td{border-bottom:none}
+td code{font-family:var(--font-mono); font-size:12.2px; color:var(--accent-2)}
+
+/* --- report --- */
+.report-top{
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:14px 16px; border-radius:var(--r-md);
+  background:var(--surface-2); border:1px solid var(--line); margin:16px 0 18px;
+}
+.ring{position:relative; width:52px; height:52px; flex:0 0 52px}
+.ring svg{transform:rotate(-90deg); display:block}
+.ring circle{fill:none; stroke-width:4; stroke-linecap:round}
+.ring .bg{stroke:var(--surface-3)}
+.ring .fg{stroke:var(--accent); transition:stroke-dashoffset .35s var(--ease)}
+.ring-num{position:absolute; inset:0; display:grid; place-items:center; font:700 12.5px/1 var(--font-mono)}
+.report-top-txt{min-width:200px; flex:1; font-size:13.6px}
+.report-top-txt span{color:var(--faint); font-size:12.4px}
+.fset{padding:14px 15px; border-radius:var(--r-md); border:1px solid var(--line);
+  background:var(--surface); margin:0 0 12px; box-shadow:var(--shadow-1)}
+.fset legend{padding:0 6px; font:600 12.4px/1 var(--font-sans); color:var(--dim)}
+.q{margin-bottom:14px}
+.q-label{font-size:13.4px; color:var(--text); margin-bottom:5px; line-height:1.5}
+.q-label .qid{font:700 11px/1 var(--font-mono); color:var(--accent); margin-right:7px}
+.q-hint{font-size:12.2px; color:var(--faint); margin-bottom:6px}
+.q input[type=text], .q textarea{
+  width:100%; padding:10px 12px; border-radius:var(--r-sm); border:1px solid var(--line);
+  background:var(--surface-2); color:var(--text); font:13.4px/1.55 var(--font-sans);
+}
+.q textarea{min-height:92px; resize:vertical}
+.q input:focus, .q textarea:focus{outline:none; border-color:var(--accent); background:var(--surface)}
+.q input::placeholder,.q textarea::placeholder{color:var(--faint)}
+.q[data-verdict="ok"]{border-left:3px solid var(--good); padding-left:12px; margin-left:-12px}
+.q[data-verdict="no"]{border-left:3px solid var(--warn); padding-left:12px; margin-left:-12px}
+.verdict{font-size:12.2px; margin-top:5px; min-height:16px}
+.verdict.ok{color:var(--good)} .verdict.no{color:var(--warn)} .verdict.na{color:var(--faint)}
+.score{
+  margin-top:16px; padding:14px 16px; border-radius:var(--r-md); border:1px solid var(--line);
+  background:var(--surface-2); font-size:13.4px;
+}
+.score .sub{color:var(--faint); font-size:12.4px; margin-top:4px; display:block}
+
+/* ===========================================================================
+   5. LESSON FOOTER NAV
+   =========================================================================== */
+.lessonnav{
+  position:sticky; bottom:0; z-index:20; display:flex; align-items:center;
+  padding:12px 28px calc(12px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,transparent,var(--bg) 34%);
+}
+.nav-inner{
+  width:100%; max-width:820px; margin:0 auto; display:flex; align-items:center; gap:10px;
+  padding:9px 10px; border-radius:var(--r-lg); border:1px solid var(--line);
+  background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(12px); box-shadow:var(--shadow-2);
+}
+.nav-spacer{flex:1}
+.nav-lbl{font:600 11.5px/1 var(--font-mono); color:var(--faint); white-space:nowrap}
+.nav-dots{display:flex; gap:4px; align-items:center}
+.nav-dots i{width:6px;height:6px;border-radius:50%;background:var(--line-2);display:block}
+.nav-dots i.on{background:var(--accent); width:18px; border-radius:var(--r-full)}
+
+/* ===========================================================================
+   6. TERMINAL DOCK / BOTTOM SHEET
+   =========================================================================== */
+.term{
+  flex:0 0 auto; height:var(--dock); display:flex; flex-direction:column; position:relative;
+  background:var(--surface); border-top:1px solid var(--line); box-shadow:var(--shadow-3); z-index:50;
+}
+.term-grip{
+  position:absolute; top:-6px; left:0; right:0; height:14px; cursor:row-resize; z-index:6; touch-action:none;
+}
+.term-grip::after{
+  content:""; position:absolute; left:50%; top:5px; width:46px; height:4px; margin-left:-23px;
+  border-radius:var(--r-full); background:var(--line-2); transition:background var(--dur);
+}
+.term-grip:hover::after{background:var(--accent)}
+.term-bar{
+  flex:0 0 auto; display:flex; align-items:center; gap:10px; height:44px; padding:0 12px;
+  border-bottom:1px solid var(--line); background:var(--surface-2); user-select:none;
+}
+.dots{display:flex; gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;display:block}
+.dots i:nth-child(1){background:#ff5f57}.dots i:nth-child(2){background:#febc2e}.dots i:nth-child(3){background:#28c840}
+.term-title{
+  font:600 12px/1 var(--font-mono); color:var(--dim); white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; min-width:0;
+}
+.term-title b{color:var(--good); font-weight:700}
+.term-tools{margin-left:auto; display:flex; align-items:center; gap:6px}
+.term-tools .icon-btn{width:28px;height:28px;flex:0 0 28px;font-size:12px}
+#termHost{flex:1; min-height:0; padding:6px 8px; background:#05080d; overflow:hidden}
+.xterm-viewport::-webkit-scrollbar{width:9px}
+.xterm-viewport::-webkit-scrollbar-thumb{background:#2b3b4e;border-radius:9px}
+
+/* connection card (shown only while the real shell is missing) */
+.conn{
+  position:absolute; inset:44px 0 0 0; z-index:8; display:none; align-items:center; justify-content:center;
+  padding:22px; background:color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter:blur(6px);
+}
+.conn.on{display:flex}
+.conn-card{max-width:620px; width:100%; text-align:center}
+.conn-card h3{font-size:16px; margin-bottom:6px}
+.conn-card p{color:var(--dim); font-size:13.6px}
+.conn-launch{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:14px 0 8px}
+.conn-launch .btn{height:36px}
+.conn-steps{
+  text-align:left; margin:16px auto 0; max-width:460px; font-size:12.8px; color:var(--dim);
+  background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-md); padding:14px 16px;
+}
+.conn-steps b{color:var(--text)}
+.conn-steps ol{margin:8px 0 0; padding-left:20px}
+.conn-steps li{margin:5px 0}
+.conn-steps code{background:var(--surface-3); border:1px solid var(--line); padding:1px 6px;
+  border-radius:var(--r-xs); font-size:12px; color:var(--accent-2)}
+.conn-note{font-size:12.2px; color:var(--faint); margin-top:12px}
+
+/* ===========================================================================
+   7. DIALOGS + TOAST
+   =========================================================================== */
+dialog{
+  border:1px solid var(--line); border-radius:var(--r-lg); padding:0; background:var(--surface);
+  color:var(--text); box-shadow:var(--shadow-3); max-width:min(620px,calc(100vw - 32px)); width:100%;
+}
+dialog::backdrop{background:rgba(4,8,14,.62); backdrop-filter:blur(3px)}
+.dlg-head{display:flex; align-items:center; gap:12px; padding:16px 18px; border-bottom:1px solid var(--line)}
+.dlg-head h2{font-size:15.5px; flex:1}
+.dlg-body{padding:18px; font-size:13.6px; color:var(--dim); max-height:min(64vh,540px); overflow:auto}
+.dlg-foot{padding:14px 18px; border-top:1px solid var(--line); display:flex; gap:10px; justify-content:flex-end}
+.kbd-list{display:grid; grid-template-columns:auto 1fr; gap:9px 14px; align-items:center}
+kbd{
+  background:var(--surface-3); border:1px solid var(--line-2); border-bottom-width:2px; border-radius:var(--r-xs);
+  padding:2px 7px; font-size:11.5px; color:var(--text); white-space:nowrap;
+}
+.toast{
+  position:fixed; left:50%; bottom:calc(var(--dock) + 76px); transform:translate(-50%,14px);
+  z-index:120; padding:10px 16px; border-radius:var(--r-full); border:1px solid var(--line-2);
+  background:var(--surface); color:var(--text); font-size:12.8px; box-shadow:var(--shadow-2);
+  opacity:0; pointer-events:none; transition:opacity .2s,transform .2s;
+}
+.toast.on{opacity:1; transform:translate(-50%,0)}
+.scrim{display:none}
+
+/* ===========================================================================
+   8. RESPONSIVE
+   =========================================================================== */
+@media (max-width:1080px){
+  :root{--rail-w:222px}
+  .lesson-inner{padding:24px 22px 30px}
+  .lessonnav{padding-left:22px; padding-right:22px}
+}
+
+@media (max-width:860px){
+  :root{--dock:min(52dvh,420px)}
+  .topbar{height:56px; padding:0 12px; gap:9px}
+  .mark{width:30px;height:30px;flex:0 0 30px;border-radius:9px;font-size:10px}
+  .brand-id{display:none}
+  .brand-name{font-size:13.5px; max-width:34vw}
+  .topbar-mid{gap:9px}
+  .meter-lbl{display:none}
+  .meter{max-width:none}
+  .pill{height:30px; padding:0 11px; font-size:11px}
+  .pill .pill-txt{display:none}
+  .pill::after{content:"Shell"; font-weight:600}
+  .pill[data-state="live"]::after{content:"Live"}
+  .pill[data-state="down"]::after{content:"Offline"}
+
+  /* rail becomes a horizontal step strip */
+  .shell{flex-direction:column}
+  .rail{
+    flex:0 0 auto; width:100%; border-right:none; border-bottom:1px solid var(--line);
+    background:var(--surface);
+  }
+  .rail-head{display:none}
+  .rail-list{
+    display:flex; gap:7px; overflow-x:auto; overflow-y:hidden; padding:9px 12px;
+    scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch;
+  }
+  .rail-list::-webkit-scrollbar{display:none}
+  .rail-phase{display:none}
+  .rail-item{
+    flex:0 0 auto; width:auto; align-items:center; gap:7px; padding:7px 11px 7px 8px;
+    border-radius:var(--r-full); border-color:var(--line); background:var(--surface-2);
+    scroll-snap-align:center; min-height:40px;
+  }
+  .rail-item .rail-txt{font-size:12px; white-space:nowrap; max-width:36vw; overflow:hidden;
+    text-overflow:ellipsis}
+  .rail-item[aria-current="true"]{background:var(--accent); border-color:var(--accent); color:var(--on-accent)}
+  .rail-item[aria-current="true"] .rail-num{background:rgba(0,0,0,.22); color:var(--on-accent); border-color:transparent}
+  .rail-item .rail-num{margin-top:0}
+  .rail-item[data-state="done"] .rail-num{background:var(--good-wash)}
+
+  .lesson-inner{padding:18px 15px 22px}
+  .step-title{font-size:22px}
+  .step-goal{font-size:14.4px}
+  .prose{font-size:15px}
+  .lessonnav{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+  .nav-inner{padding:8px; gap:8px}
+  .nav-dots{display:none}
+  .nav-lbl{font-size:11px}
+  .nav-inner .btn{flex:1; height:var(--tap); font-size:14px}
+
+  /* command block: actions get their own full-width row */
+  .cmd{flex-wrap:wrap; gap:9px; padding:12px}
+  .cmd-ico{display:none}
+  .cmd-body{flex:1 1 100%; order:1}
+  .cmd-actions{order:2; flex:1 1 100%; gap:8px}
+  .cmd-actions .btn{flex:1; height:var(--tap); font-size:13.5px}
+  .cmd-text{font-size:13.4px}
+
+  .fieldrow{grid-template-columns:1fr}
+  .fieldrow dd{margin-bottom:7px}
+  .notes textarea{font-size:16px} /* prevents iOS zoom on focus */
+
+  /* terminal becomes a bottom sheet */
+  body{padding-bottom:calc(var(--peek) + env(safe-area-inset-bottom))}
+  .term{
+    position:fixed; left:0; right:0; bottom:0; height:86dvh;
+    border-top:1px solid var(--line); border-radius:var(--r-lg) var(--r-lg) 0 0;
+    transform:translateY(calc(100% - var(--peek) - env(safe-area-inset-bottom)));
+    transition:transform .26s var(--ease); will-change:transform;
+  }
+  body.sheet-dragging .term{transition:none}
+  .term-grip{display:none}
+  .term-bar{height:var(--peek); cursor:grab; touch-action:none; border-radius:var(--r-lg) var(--r-lg) 0 0}
+  body.sheet-dragging .term-bar{cursor:grabbing}
+  .term-bar::after{
+    content:""; position:absolute; left:50%; top:7px; width:38px; height:4px; margin-left:-19px;
+    border-radius:var(--r-full); background:var(--line-2);
+  }
+  .term-title{font-size:11.5px}
+  .dots{display:none}
+  .term-tools .icon-btn{width:34px;height:34px;flex:0 0 34px}
+  .scrim{
+    display:block; position:fixed; inset:0; z-index:45; background:rgba(4,8,14,.5);
+    opacity:0; pointer-events:none; transition:opacity .26s;
+  }
+  body.sheet-open .scrim{opacity:1; pointer-events:auto}
+  .toast{bottom:calc(var(--peek) + env(safe-area-inset-bottom) + 72px)}
+  .conn{inset:var(--peek) 0 0 0; padding:14px}
+  .conn-card{max-width:100%}
+  .conn-steps{max-width:100%; padding:12px 13px}
+  table{min-width:380px}
+}
+
+@media (max-width:520px){
+  .brand-name{max-width:32vw}
+  .meter{min-width:44px}
+  .lesson-inner{padding:16px 13px 20px}
+  .step-title{font-size:20px}
+  .rail-item .rail-txt{max-width:28vw}
+}
+
+/* ===========================================================================
+   9. PRINT
+   =========================================================================== */
+@media print{
+  html,body{height:auto; overflow:visible; background:#fff; color:#000; font-size:11pt}
+  body{background-image:none; display:block; padding:0}
+  .topbar,.rail,.term,.lessonnav,.scrim,.toast,.cmd-actions,.notes,.skip,.conn{display:none !important}
+  .shell{display:block; overflow:visible}
+  .lesson{overflow:visible}
+  .lesson-inner{max-width:none; padding:0}
+  .step-title,.prose{color:#000}
+  .callout,.fset,.fieldlist,.tbl-wrap,.cmd{border:1px solid #bbb; background:#fff; break-inside:avoid}
+  .cmd-text,.cmd-text::before{color:#000}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important}
+}
+</style>
+</head>
+<body>
+
+<a class="skip" href="#lesson">Skip to the lesson</a>
+<div class="scrim" id="scrim"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="mark" aria-hidden="true">CTIA</div>
+    <div class="brand-txt">
+      <div class="brand-id">Lab unconstrained-delegation-001</div>
+      <div class="brand-name">Unconstrained Kerberos Delegation &amp; Pass the Ticket</div>
+    </div>
+  </div>
+
+  <div class="topbar-mid">
+    <div class="meter" id="meter" role="progressbar" aria-label="Lab progress"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="meterFill"></i></div>
+    <div class="meter-lbl" id="meterLbl">Step 1 / 18</div>
+  </div>
+
+  <div class="topbar-right">
+    <button class="pill" id="shellPill" data-state="searching" title="Real bash terminal status — click to search again">
+      <span class="dot"></span><span class="pill-txt">Finding the lab shell…</span>
+    </button>
+    <button class="icon-btn" id="btnTheme" title="Switch light / dark theme" aria-label="Switch theme">◐</button>
+    <button class="icon-btn" id="btnHelp" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Lab steps">
+    <div class="rail-head">
+      <span class="eyebrow">Investigation</span>
+      <div class="rail-title">CORP domain · UTC+08</div>
+    </div>
+    <div class="rail-list" id="railList"></div>
+  </nav>
+
+  <main class="lesson" id="lesson" tabindex="-1">
+    <div class="lesson-inner">
+      <article id="stepBody"></article>
+      <footer class="lessonnav">
+        <div class="nav-inner">
+          <button class="btn" id="btnBack" aria-label="Previous step">← Back</button>
+          <div class="nav-spacer"></div>
+          <div class="nav-dots" id="navDots" aria-hidden="true"></div>
+          <span class="nav-lbl" id="navLbl">1 / 18</span>
+          <div class="nav-spacer"></div>
+          <button class="btn primary" id="btnNext" aria-label="Next step">Next →</button>
+        </div>
+      </footer>
+    </div>
+  </main>
+</div>
+
+<section class="term" id="term" aria-label="Lab terminal (real bash)">
+  <div class="term-grip" id="termGrip" title="Drag to resize"></div>
+  <div class="term-bar" id="termBar">
+    <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="term-title" id="termTitle">bash · <b>connecting…</b></div>
+    <div class="term-tools">
+      <button class="icon-btn" id="btnClear" title="Clear the terminal" aria-label="Clear terminal">⌫</button>
+      <button class="icon-btn" id="btnReconnect" title="Reconnect the shell" aria-label="Reconnect terminal">↻</button>
+      <button class="icon-btn" id="btnSheet" title="Expand or collapse the terminal" aria-label="Toggle terminal">⤢</button>
+    </div>
+  </div>
+  <div id="termHost"></div>
+  <div class="conn" id="conn">
+    <div class="conn-card">
+      <h3 id="connTitle">Looking for the lab shell…</h3>
+      <p id="connMsg">This lab runs a <b>real bash shell</b>, so every command executes for real
+        against the log files on this machine. Checking the usual local ports — this page connects on its own.</p>
+      <div class="conn-launch">
+        <button class="btn primary" id="btnRetry">Search again</button>
+      </div>
+      <div class="conn-steps" id="connSteps">
+        <b>Start the lab — no commands to type:</b>
+        <ol>
+          <li><b>macOS</b> — double-click <code>Start Lab.command</code></li>
+          <li><b>Windows</b> — double-click <code>Start Lab.bat</code></li>
+          <li><b>Linux / Kali</b> — double-click <code>start-lab.desktop</code></li>
+        </ol>
+        The browser opens by itself and this panel disappears the moment the shell is ready.
+      </div>
+      <p class="conn-note">macOS: if the first double-click is blocked, right-click
+        <code>Start Lab.command</code> → <b>Open</b>.</p>
+    </div>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="dlgHelp">
+  <div class="dlg-head">
+    <h2>Keyboard shortcuts</h2>
+    <button class="icon-btn" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="dlg-body">
+    <div class="kbd-list">
+      <kbd>→</kbd><span>Next step</span>
+      <kbd>←</kbd><span>Previous step</span>
+      <kbd>Tab</kbd><span>Move between the command blocks of this step</span>
+      <kbd>Enter</kbd><span>Run the focused command in the real terminal</span>
+      <kbd>C</kbd><span>Copy the focused command</span>
+      <kbd>T</kbd><span>Expand or collapse the terminal</span>
+      <kbd>?</kbd><span>This dialog</span>
+    </div>
+    <p style="margin-top:16px">Everything on this page comes out of the terminal: <b>Run</b> types the
+      command into the real bash session, and the answer key is used only by the self-check on the last step.</p>
+  </div>
+  <div class="dlg-foot"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<script src="vendor_xterm.js"></script>
+<script src="vendor_xterm_fit.js"></script>
+<script>
+"use strict";
+/* ===========================================================================
+   PART 1 — LAB CONTENT
+   Every command below runs for real, in bash, inside the lab folder.
+   =========================================================================== */
+const LAB = {
+  id: "unconstrained-delegation-001",
+  title: "Unconstrained Kerberos Delegation & Pass the Ticket",
+  subnet: "10.0.4.0/24",
+  tz: "UTC+08"
+};
+
+/* A command box. `note` explains what this box is for: for a multi-tool command
+   each box is the box above it plus one extra tool, and the note says which
+   tool was added and why it is needed. */
+const CMDS = [];
+const C = (cmd, note) => {
+  const idx = CMDS.length;
+  CMDS.push({cmd: cmd, note: note || ""});
+  return '<div class="cmd" data-cmdidx="' + idx + '"></div>';
+};
+
+/* Split a command into its pipeline stages, ignoring any | that sits inside
+   quotes. awk -F'|' and grep 'a|b' both need this, so counting with
+   indexOf or split("|") silently produces the wrong answer. */
+function stages(cmd){
+  const out = [];
+  let cur = "", q = null;
+  for (let i = 0; i < cmd.length; i++){
+    const ch = cmd[i];
+    if (q){ if (ch === q) q = null; cur += ch; continue; }
+    if (ch === "'" || ch === '"'){ q = ch; cur += ch; continue; }
+    if (ch === "|"){ out.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+/* THE PEDAGOGY RULE, enforced in code.
+   A command that uses more than one tool must appear as a ladder: every box
+   is the box above it plus exactly one tool, always visible, never collapsed.
+   One tool here means either a new pipe stage, or a narrowing clause added
+   inside the first stage's program. A box that neither grows the pipeline nor
+   tightens the program is a different command wearing the same clothes, so it
+   throws here instead of shipping. */
+function ladderCheck(list, where){
+  for (let i = 1; i < list.length; i++){
+    const a = stages(list[i - 1].cmd);
+    const b = stages(list[i].cmd);
+    const grewTail = b.length === a.length + 1 &&
+      a.every((t, k) => b[k] === t) && b[b.length - 1].length > 0;
+    const grewHead = b.length === a.length && b[0].length > a[0].length &&
+      b.slice(1).every((t, k) => t === a[k + 1]);
+    if (!grewTail && !grewHead){
+      throw new Error("ladder broken in " + where + " at box " + (i + 1)
+        + ": each box must be the box above plus exactly one tool"
+        + " / above: " + list[i - 1].cmd + " / this: " + list[i].cmd);
+    }
+  }
+}
+
+/* A ladder, written the way it is read.
+   rows is a list of [command, reason]:
+     [""]      same command as the box above (a reason needs no new tool)
+     ["+ sort"] the box above plus one pipe stage
+     ["full..."] written out, still checked against the rule above
+   Every reason must be exactly one sentence about why the command is being
+   run, never a syntax lecture. */
+function L(rows){
+  const built = [];
+  rows.forEach((row, i) => {
+    const raw = row[0];
+    let cmd;
+    if (i === 0) cmd = raw;
+    else if (raw === "") cmd = built[i - 1].cmd;
+    else if (raw.charAt(0) === "+") cmd = built[i - 1].cmd + " | " + raw.slice(1).trim();
+    else cmd = raw;
+    built.push({cmd: cmd, note: row[1]});
+  });
+  ladderCheck(built, "step ladder");
+  return built.map((s, i) => (i ? "\n      " : "      ") + C(s.cmd, s.note)).join("");
+}
+
+const STEPS = [
+  {
+    phase: "Triage",
+    title: "Know your evidence",
+    goal: "Establish exactly what you hold before you touch anything. Log analysis starts with an inventory, not a conclusion.",
+    tags: [],
+    body: `
+      <div class="prose">
+        <p>SOC raised a ticket: <strong>a suspected delegation abuse on the workstation subnet
+        ${LAB.subnet}</strong>, with privileged sessions appearing on servers nobody was logged in to.
+        You have five log exports and no conclusion yet. Start by knowing the shape of the evidence.</p>
+        <p>Where are you, and what is actually in this folder?</p>
+      </div>
+      ${C("pwd", "Confirm the shell is sitting in the evidence folder before you trust any file name.")}
+      ${C("ls -la", "See exactly which evidence files you have and how large each one is.")}
+      <div class="callout tip"><div class="co-head">Read this first</div><div class="co-body">
+        Every log is <strong>pipe-separated</strong>. That single delimiter is what makes every
+        <code>awk</code> in this lab possible. In <code>security_auth.log</code> field 3 is the
+        event ID, field 4 is the host the event happened <em>on</em>, field 5 is the account, and
+        field 7 is the logon type — which turns out to be the most important column in the whole
+        investigation. In <code>network_flows.log</code> field 3 is the firewall verdict and field 5
+        is the source.
+      </div></div>
+      <div class="callout tip"><div class="co-head">How to read the ladders</div><div class="co-body">
+        Whenever a command needs more than one tool it is shown as a ladder: one box per stage,
+        each box the box above plus exactly one tool. Run them from the top and watch the output
+        change. The derivation is the lesson, so do not skip to the last box.
+      </div></div>
+      <div class="prose"><p>Look at the first lines of each file to learn its schema:</p></div>
+      ${C("head -2 security_auth.log", "Check what a Windows Security record looks like before you start searching them.")}
+      ${C("head -2 network_flows.log", "Check the firewall record format, because every later network command depends on it.")}
+      ${C("head -2 sysmon_process.log", "Check what Sysmon adds to the Security log before deciding which source to trust.")}
+      ${C("head -2 dns_queries.log", "Skim the DNS log so you know what ordinary background chatter on this subnet looks like.")}
+      ${C("head -2 dhcp_leases.log", "Skim the lease table, because it is the only thing that will later tell you which device owns an address.")}
+      <div class="prose"><p>They are large. Count them rather than read them:</p></div>
+      ${C("wc -l *.log", "Size every log so you know which ones are worth searching line by line.")}
+      <div class="fieldlist">
+        <div class="fl-head">security_auth.log — field map</div>
+        <dl class="fieldrow">
+          <dt>1</dt><dd>timestamp (ISO 8601, ${LAB.tz})</dd>
+          <dt>2</dt><dd>Channel — always <code>Security</code> here</dd>
+          <dt>3</dt><dd><strong>EventID</strong> — 4624 / 4625 / 4634 / 4672 / 4688</dd>
+          <dt>4</dt><dd><strong>Computer=</strong> the host the event happened ON</dd>
+          <dt>5</dt><dd><strong>TargetUserName=</strong> who authenticated</dd>
+          <dt>7</dt><dd><strong>LogonType</strong> — 2 interactive, 3 network, 10 remote interactive</dd>
+          <dt>8</dt><dd>IpAddress — where the logon came FROM</dd>
+          <dt>13</dt><dd>AuthPackage — <code>NTLM</code> or <code>Kerberos</code></dd>
+        </dl>
+      </div>
+      <div class="fieldlist">
+        <div class="fl-head">network_flows.log — field map</div>
+        <dl class="fieldrow">
+          <dt>1</dt><dd>timestamp (ISO 8601, ${LAB.tz})</dd>
+          <dt>2</dt><dd>device tag <code>FW</code></dd>
+          <dt>3</dt><dd><strong>ACTION</strong> — ALLOW / REFUSED / RESET</dd>
+          <dt>4</dt><dd>protocol</dd>
+          <dt>5</dt><dd><strong>src_ip:port</strong></dd>
+          <dt>6</dt><dd>the <code>-&gt;</code> arrow</dd>
+          <dt>7</dt><dd><strong>dst_ip:port</strong></dd>
+          <dt>8–10</dt><dd>pkts, bytes, TCP flags</dd>
+          <dt>11</dt><dd>srchost — free asset context</dd>
+          <dt>12</dt><dd>dsthost — destination hostname</dd>
+        </dl>
+      </div>`,
+    checkpoint: "How many evidence files do you have, and roughly how many lines in total? Which single field in <code>security_auth.log</code> tells you <em>how</em> somebody authenticated, as opposed to <em>who</em>?"
+  },
+  {
+    phase: "Triage",
+    title: "Baseline the estate",
+    goal: "Learn what ordinary traffic and ordinary logins look like here, so that later you can recognise what is not ordinary.",
+    tags: [],
+    body: `
+      <div class="prose">
+        <p>An anomaly only means something against a baseline. Before hunting, measure the two
+        populations you are hunting inside: what the firewall normally allows, and which accounts
+        normally authenticate. Start with the firewall verdicts.</p>
+      </div>
+      ${L([
+        [`awk -F'|' '{print $3}' network_flows.log`, "Pull the firewall verdict out of every flow record, which is the column this step is about."],
+        [`+ sort`, "Add sort so identical verdicts sit next to each other instead of being scattered across 2,000 lines."],
+        [`+ uniq -c`, "Add uniq -c so each distinct verdict becomes one line with how many times it occurred."],
+        [`+ sort -rn`, "Rank by that count so the commonest verdict is at the top rather than buried."],
+      ])}
+      <div class="prose">
+        <p>Almost everything is <code>ALLOW</code>, and the <code>REFUSED</code> and
+        <code>RESET</code> events are a small tail. <strong>There is no port scanning in this
+        estate</strong>, so do not go looking for a sweep. Now do the same thing to the
+        authentication log, whose verdict column is the event ID.</p>
+      </div>
+      ${L([
+        [`awk -F'|' '{print $3}' security_auth.log`, "Pull the event ID out of every authentication record to see which kinds of event this log actually holds."],
+        [`+ sort`, "Add sort so identical event IDs come together."],
+        [`+ uniq -c`, "Add uniq -c so each event type becomes one line with a count."],
+        [`+ sort -rn`, "Rank by that count so the commonest event type is at the top."],
+      ])}
+      <div class="prose">
+        <p>Five event types, and every one of them has a legitimate reason to exist. Now rank the
+        accounts that authenticate. The first box does the extraction and the stripping in one
+        <code>awk</code>, because the field you want is <code>TargetUserName=name</code> and you
+        only want the name.</p>
+      </div>
+      ${L([
+        [`awk -F'|' '$3=="EventID=4624"{split($5,u,"="); print u[2]}' security_auth.log`, "Extract the account name out of every successful logon so the identities become countable."],
+        [`+ sort`, "Add sort so identical accounts come together."],
+        [`+ uniq -c`, "Add uniq -c so each account becomes one line with a count of its logons."],
+        [`+ sort -rn`, "Rank by that count so the busiest account is at the top."],
+        [`+ head -15`, "Trim to the top fifteen, because a long tail of rare accounts would only hide the shape you are looking for."],
+      ])}
+      <div class="callout tip"><div class="co-head">A population, not a suspect</div><div class="co-body">
+        Note how the logons are spread: there is no single busiest identity to investigate, and
+        the busiest account is not the interesting one. Notice too that most names end in a letter
+        — and some end in a <strong>dollar sign</strong>, which is not a person at all. Hold that
+        thought; step 3 comes back to it.
+      </div></div>
+      ${C("grep -c 'EventID=4624' security_auth.log", "Establish the total number of successful logons, which is the population every count in this lab is drawn from.")}
+      ${C("grep -c 'EventID=4625' security_auth.log", "Establish how many failed logons exist, because failed logons are where most false positives in this lab live.")}
+      <div class="callout tip"><div class="co-head">A fact worth keeping</div><div class="co-body">
+        Hostname numbers here do <strong>not</strong> match the last octet of the address.
+        <code>sec-win-04</code> is not <code>10.0.4.4</code> — it is <code>10.0.4.12</code> — and
+        <code>sec-win-09</code> is <code>10.0.4.20</code>. Never infer an address from a hostname in
+        this estate. Resolve it in step 6.
+      </div></div>`,
+    checkpoint: "Which accounts receive the most successful logons? Roughly what share of all firewall events is <code>ALLOW</code>, and does anything in this baseline look like a scan?"
+  },
+  {
+    phase: "Triage",
+    title: "Find the account nobody else uses",
+    goal: "Turn \"a delegation problem\" into a shortlist of identities worth examining, by counting destinations instead of reading events.",
+    tags: [{id:"T1550.003", name:"Pass the Ticket"}],
+    body: `
+      <div class="prose">
+        <p>Step 2 told you the busiest accounts are unremarkable. The ticket says <em>delegation</em>,
+        which is about a very specific thing: a privileged identity authenticating somewhere it has
+        no business being. So stop ranking accounts by volume and start looking at the ones that
+        barely appear.</p>
+      </div>
+      <div class="prose">
+        <p>Step 2 already showed you the busy end of this ranking, and it was as unimpressive as
+        promised: the same handful of ordinary accounts over and over. So read the ranking from the
+        <strong>other end</strong>. A stolen or abused identity is rare by definition — and a rare
+        identity with an enormous blast radius is exactly the shape of this attack, so the bottom of
+        the list is where the answer is.</p>
+      </div>
+      ${L([
+        [`awk -F'|' '$3=="EventID=4624"{split($5,u,"="); print u[2]}' security_auth.log`, "Extract the account name from every successful logon, so the identities in this estate become countable."],
+        [`+ sort`, "Add sort so identical accounts come together."],
+        [`+ uniq -c`, "Add uniq -c so each account becomes one line with a count of its logons."],
+        [`+ sort -rn`, "Rank by that count, which puts the busiest account at the top of the list."],
+        [`+ tail -15`, "Jump to the rare end of the ranking instead of the busy end, which is where the accounts used only once or twice are sitting."],
+        [`awk -F'|' '$3=="EventID=4624" && $5 ~ /Administrator$/{split($5,u,"="); print u[2]}' security_auth.log | sort | uniq -c | sort -rn | tail -15`, "Tighten the very first stage to keep only the built-in Administrator, which leaves that one identity and its count of four sitting by itself."],
+      ])}
+      <div class="callout tip"><div class="co-head">Two kinds of rare</div><div class="co-body">
+        At the bottom you see accounts that authenticate <strong>once</strong> — service identities,
+        a helpdesk call, a scheduled job — and accounts that end in <strong><code>$</code></strong>,
+        which are not people at all. A trailing dollar sign means a <strong>machine account</strong>:
+        the identity Windows uses when a computer talks to a service. There are hundreds of those in
+        this estate and every single one is legitimate.
+      </div></div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start over from the raw successful logons, because the next three boxes all count the same population with one extra restriction each."],
+        [`+ grep -F '$'`, "Add the machine accounts, so you can measure the ordinary background of this domain before you judge anything unusual."],
+        [`+ wc -l`, "Add wc -l to count them, which is the population you are about to subdivide."],
+      ])}
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Return to the raw logons once more, to ask a different question of the same data."],
+        [`+ grep -F '$'`, "Add the machine accounts again."],
+        [`+ grep -c 'Computer=sec-srv'`, "Add a count of the ones that landed on a server, which is where machine accounts are supposed to end up."],
+      ])}
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "The same starting point, so the comparison is honest."],
+        [`+ grep -F '$'`, "Add the machine accounts again."],
+        [`+ awk -F'|' '$4 ~ /sec-win/ {print $4}'`, "Add a filter for the workstation destinations, and watch the output go completely empty."],
+        [`+ wc -l`, "Count what is left, which is zero, and treat that zero as the finding rather than as a failed search."],
+      ])}
+      <div class="callout tip"><div class="co-head">Zero is a finding</div><div class="co-body">
+        Every machine account in this estate authenticates to a <strong>server</strong>, and not one
+        of them authenticates to a workstation. That is not a stylistic observation, it is the
+        invariant the rest of the lab is built on: when you later find a privileged identity
+        authenticating <em>into a user's desktop</em>, there is no background noise to hide it in.
+      </div></div>`,
+    checkpoint: "How many machine accounts authenticate successfully in this estate, and how many of them land on a workstation? Why is that number the right baseline to judge a workstation logon against?"
+  },
+  {
+    phase: "Attribution",
+    title: "Split the Administrator by logon type",
+    goal: "Take one suspicious identity and break it apart by how it authenticated, which is where the whole attack becomes visible.",
+    tags: [{id:"T1550.003", name:"Pass the Ticket"}, {id:"T1078.002", name:"Valid Accounts: Domain Accounts"}],
+    body: `
+      <div class="prose">
+        <p>At the bottom of that ranking sat a single identity that should not be rare at all: the
+        built-in domain <code>Administrator</code>. In a healthy estate that account is either idle
+        or used interactively by a handful of people. Here it appears only a handful of times, and
+        every one of those handful is interesting.</p>
+        <p>The trap is to stop there and call it. Four logons for <code>Administrator</code> is not
+        a finding on its own. The finding is <strong>how</strong> each of those four arrived, so
+        build the count up one column at a time.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons, because logon type only exists on the records that represent an actual authentication."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the account, so every record you keep belongs to the identity under suspicion."],
+        [`+ awk -F'|' '{print $7}'`, "Add awk to pull out the logon type column, which is the field that separates a person at a keyboard from a service ticket."],
+        [`+ sort`, "Add sort so identical logon types come together."],
+        [`+ uniq -c`, "Add uniq -c so each logon type becomes one line with a count."],
+        [`+ sort -rn`, "Rank by that count, so the commonest way this identity authenticated is at the top."],
+      ])}
+      <div class="prose">
+        <p>Three network logons and one remote-interactive logon. Both of those are
+        <strong>non-interactive</strong> — no keyboard, no human present. Now the decisive question:
+        did anyone ever sit at one of these machines as the Administrator?</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons again, because the interesting question now is not how many but where."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the account under suspicion."],
+        [`+ awk -F'|' '{print $7, $4}'`, "Add awk to print the logon type beside the host each session landed on, which pairs the two facts you actually care about."],
+        [`+ sort`, "Add sort, so the types group together and you can see which host received which kind."],
+      ])}
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Back to the successful logons, to test the one thing that would make all of this innocent."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the account again."],
+        [`+ awk -F'|' '$7=="LogonType=2"'`, "Add an interactive logon, which is the only type that requires a person physically at the machine, and watch nothing come back."],
+        [`+ wc -l`, "Count what is left, and notice that a count of zero is a result, not a failure."],
+      ])}
+      <div class="callout warn"><div class="co-head">Nobody was at the keyboard</div><div class="co-body">
+        Not one interactive logon. Every appearance of this account in the entire corpus is
+        non-interactive: it was used as a <em>credential</em>, never as a <em>person</em>. That is
+        the single strongest fact in this lab, and it is only visible because you split the count
+        instead of stopping at four.
+      </div></div>
+      <div class="callout tip"><div class="co-head">Logon types are worth memorising</div><div class="co-body">
+        <b>2</b> interactive, a person at the keyboard. <b>3</b> network, a service or delegated
+        ticket presenting credentials to a resource. <b>10</b> remote interactive, which usually
+        means a remote session or a redirected drive. A domain administrator with type 3 and
+        type 10 activity but no type 2 activity is not an administrator at work.
+      </div></div>`,
+    checkpoint: "Break the four Administrator logons down by type. Which types appear, which does not, and what does the missing one prove?"
+  },
+  {
+    phase: "Attribution",
+    title: "Prove the inbound session is the anomaly",
+    goal: "Establish that the one remote-interactive Administrator logon is not administration, and name the host it landed on.",
+    tags: [{id:"T1078.002", name:"Valid Accounts: Domain Accounts"}, {id:"T1558.003", name:"Kerberoasting"}],
+    body: `
+      <div class="prose">
+        <p>Pull that single remote-interactive logon out and look at it properly. It is the only
+        event in this lab where a domain administrator's credentials arrived at a
+        <strong>workstation</strong> — and unconstrained delegation turns exactly that event into
+        a full domain compromise.</p>
+      </div>
+      ${L([
+        [`grep -F 'TargetUserName=Administrator' security_auth.log`, "Take every record belonging to the account, which is a small enough set to read directly."],
+        [`+ cut -d'|' -f1,3,4,7,8,13`, "Add cut to keep only the timestamp, the event, the host, the logon type, the source and the auth package, which is the whole story of the record in one line."],
+      ])}
+      <div class="prose">
+        <p>Read those four lines as a story. At <code>09:51:02</code> the built-in Administrator
+        opens a <strong>remote interactive</strong> session, over <strong>Kerberos</strong>, on
+        <code>sec-win-05</code> — a user's desktop — coming from <code>10.0.4.10</code>. Nothing
+        else in the corpus looks like that.</p>
+      </div>
+      <div class="callout tip"><div class="co-head">Why a workstation is the wrong place</div><div class="co-body">
+        Administrators sign in to <strong>servers</strong> to administer them. Users sign in to
+        their own <strong>desktop</strong>, and that is where the built-in Administrator should
+        never appear. Somebody persuaded that administrator to authenticate to a workstation — by
+        opening a link, a share, or a remote session that looked routine. Nobody was phished for a
+        password; the credential walked in on its own and the host captured it.
+      </div></div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons, to prove the host claim across the whole account rather than on one record."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the account."],
+        [`+ grep 'LogonType=10'`, "Add the remote interactive type, which isolates the coerced session from the three delegated ones."],
+        [`+ awk -F'|' '{print $1, $4, $8, $13}'`, "Add awk to reduce the record to a timestamp, the host it landed on, the source and the auth package, which is the whole story of the event."],
+      ])}
+      <div class="prose">
+        <p>That is the domain controller. So the domain administrator did not travel — a workstation
+        pulled the credential to itself. Now check the privilege events, because a genuinely
+        privileged session always leaves one behind.</p>
+      </div>
+      ${L([
+        [`grep -F 'TargetUserName=Administrator' security_auth.log`, "Return to the account's records, which contain both its logons and its privilege events."],
+        [`+ grep 'EventID=4672'`, "Add the special-privileges event, which is raised only when a genuinely privileged token is created."],
+        [`+ awk -F'|' '{print $1, $7}'`, "Add awk to reduce each of those to a timestamp and a logon type, so you can see them land in order."],
+        [`+ sort`, "Add sort, because the timestamps share one format and that is what makes the sequence readable."],
+      ])}
+      <div class="callout warn"><div class="co-head">What these logs cannot tell you</div><div class="co-body">
+        There is no field anywhere in this corpus that says <em>this host is configured for
+        unconstrained delegation</em>. That setting lives in Active Directory, as an attribute on
+        the computer object, and no log here records it. What you <em>can</em> prove from telemetry
+        is the pattern: a privileged inbound authentication to a workstation, immediately followed
+        by privileged sessions appearing on other hosts. Confirming the root cause means reading
+        the delegation attribute in AD — say so in your report rather than implying the logs
+        proved it.
+      </div></div>`,
+    checkpoint: "Which host received the inbound Administrator session, from which address, using which logon type and which auth package? What would you have to check outside these five files to confirm why it worked?"
+  },
+  {
+    phase: "Attribution",
+    title: "Resolve addresses to hostnames",
+    goal: "Turn the addresses in the authentication log into names you can put in a containment list, by looking them up rather than guessing.",
+    tags: [{id:"T1078", name:"Valid Accounts"}],
+    body: `
+      <div class="prose">
+        <p>You have one inbound source and, shortly, three destinations — all as bare addresses.
+        Addresses are not what you brief an incident responder with. Step 2 already warned you that
+        hostname numbers do not match addresses here, so the mapping has to be
+        <strong>looked up</strong>.</p>
+      </div>
+      ${L([
+        [`grep 'ip=10.0.4.11|' dhcp_leases.log`, "Find the lease record for the address that everything seems to originate from."],
+        [`+ grep -o 'host=[^|]*'`, "Add grep -o to pull the hostname field out of the lease record, which is the only place this mapping exists."],
+        [`+ head -1`, "Take the first match, because renewals mean one address legitimately has several lease records."],
+      ])}
+      <div class="callout tip"><div class="co-head">The trap, in one line</div><div class="co-body">
+        The address that sources the attack resolves to <code>sec-win-05</code>. Read it carefully,
+        because <code>10.0.4.11</code> looks like it should be the eleventh machine and it is not
+        the eleventh anything. That host is both the foothold <em>and</em> the source of the three
+        delegated sessions.
+      </div></div>
+      <div class="prose">
+        <p>Now the three destinations from step 4. Take the delegated logons and ask which hosts
+        received them.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons, which is where the delegated sessions are recorded."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the account."],
+        [`+ grep 'LogonType=3'`, "Add the network logon type, which separates the three delegated sessions from the inbound coerced one."],
+        [`+ awk -F'|' '{split($4,c,"="); print c[2]}'`, "Add awk to strip the domain suffix off the Computer field, leaving bare hostnames you can put in a ticket."],
+        [`+ sort -u`, "Add sort -u so each host is listed once, which turns three events into a count of distinct targets."],
+      ])}
+      <div class="prose">
+        <p>Three hostnames. Now convert those to addresses as well, because your report needs both
+        and a reader will check one against the other.</p>
+      </div>
+      ${L([
+        [`grep -E 'ip=10\\.0\\.4\\.(12|21|22)\\|' dhcp_leases.log`, "Pull the lease records for the three addresses directly, using an alternation so one pass gets all of them."],
+        [`+ awk -F'|' '{split($5,i,"="); print i[2]}'`, "Add awk to reduce each lease to just its address, which strips away the duplicate renewal records."],
+        [`+ sort -u`, "Add sort -u so each address appears once."],
+      ])}
+      ${L([
+        [`grep 'ip=10.0.4.12|' dhcp_leases.log`, "Take the lease records for the first host that received the stolen ticket."],
+        [`+ grep -o 'host=[^|]*'`, "Add grep -o to pull the hostname field out of the record, which is the only place this mapping is written down."],
+        [`+ head -1`, "Take the first match, because renewals give one address several lease records."],
+      ])}
+      <div class="callout tip"><div class="co-head">Write both forms down</div><div class="co-body">
+        From here on, <code>sec-win-04</code> is <code>10.0.4.12</code>,
+        <code>sec-win-06</code> is <code>10.0.4.21</code>, <code>sec-win-07</code> is
+        <code>10.0.4.22</code>, and <code>sec-win-05</code> is <code>10.0.4.11</code>. Every
+        remaining step names hosts one way and addresses the other, and mixing them up is the most
+        common way a correct investigation gets reported wrong.
+      </div></div>`,
+    checkpoint: "Which host owns the address that sources everything, and which three hosts received the delegated sessions? Which of those mappings could you not have guessed from the hostname alone?"
+  },
+  {
+    phase: "Attribution",
+    title: "Name the operator account",
+    goal: "Identify who was sitting at the keyboard on the compromised workstation, without assuming the loudest account is the culprit.",
+    tags: [{id:"T1078.001", name:"Valid Accounts: Local Accounts"}],
+    body: `
+      <div class="prose">
+        <p>You know which host was abused. Now find out <strong>which account was on it</strong>
+        during the intrusion — and be careful, because the account that was on the keyboard is not
+        necessarily the account that did the work.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons, which is where every session in the estate is recorded."],
+        [`+ grep -F 'Computer=sec-win-05'`, "Add the foothold host, so you are counting sessions that landed on the compromised machine rather than everywhere."],
+        [`+ awk -F'|' '{split($5,u,"="); print u[2]}'`, "Add awk to reduce each of those sessions to the account that authenticated."],
+        [`+ sort`, "Add sort so identical accounts come together."],
+        [`+ uniq -c`, "Add uniq -c so each account becomes one line with a count of sessions received."],
+        [`+ sort -rn`, "Rank by that count, so the busiest account on that host is at the top."],
+      ])}
+      <div class="prose">
+        <p>Several accounts land on that workstation over the day, which is normal — it is a shared
+        estate. The question is not who uses the machine, it is who was on it <em>while the
+        intrusion ran</em>. So bound the window before you judge anybody.</p>
+      </div>
+      ${L([
+        [`grep -F 'TargetUserName=jdoe' security_auth.log`, "Take the records for the one account that appears exactly once, which is itself unusual and worth noticing."],
+        [`+ cut -d'|' -f1,3,4,7,8`, "Add cut to keep the timestamp, the event, the host, the logon type and the source, which is the full shape of the session."],
+      ])}
+      ${L([
+        [`grep -h jdoe security_auth.log sysmon_process.log`, "Merge both process-bearing logs and take every record that mentions the operator account, which is how you get the whole footprint rather than just the logons."],
+        [`+ cut -d'|' -f1`, "Add cut to keep only the timestamp column, because the question here is when, not what."],
+        [`+ sort -u`, "Add sort -u so each distinct moment appears once."],
+      ])}
+      <div class="callout tip"><div class="co-head">One account, one session, no reconnect</div><div class="co-body">
+        One successful logon for <code>jdoe</code> in the entire corpus, and one logoff. That account
+        signs in once, does everything in a single sitting, and signs out — no second attempt, no
+        retry, no wandering in and out. Compare that with the shared workstation's ordinary accounts
+        and the shape is obvious.
+      </div></div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Return to the successful logons to check whether this account ever authenticated by any other route."],
+        [`+ grep -F 'TargetUserName=jdoe'`, "Add the operator account."],
+        [`+ wc -l`, "Count them, so you can state how many separate sessions this identity ever opened in the whole estate."],
+      ])}
+      <div class="callout warn"><div class="co-head">A foothold is not the operator</div><div class="co-body">
+        Say <code>jdoe</code> was the account used from the compromised host, and be precise about
+        what that does and does not prove. It does <em>not</em> mean a person called jdoe did this,
+        and it does not mean jdoe is malicious — it means the session on that host belonged to
+        jdoe, and whatever held it ran the tooling. Credential theft, a shared account, or a
+        hijacked session all look identical here. That ambiguity belongs in your report.
+      </div></div>`,
+    checkpoint: "Which account was on the foothold during the intrusion, and how many times did it authenticate in the whole estate? Why can you not conclude that the person named in that account did it?"
+  },
+  {
+    phase: "On the host",
+    title: "The recon trio",
+    goal: "Read the attacker's first three commands and name the question they were answering.",
+    tags: [{id:"T1033", name:"System Owner/User Discovery"}, {id:"T1087.002", name:"Domain Account Discovery"}, {id:"T1558.003", name:"Kerberoasting"}],
+    body: `
+      <div class="prose">
+        <p>You have the account and the host. Now read what was actually executed on it, in order,
+        and ask of each one <em>what question was the operator trying to answer?</em> That question
+        is the real content of a process log — the binary name is just the answer's first word.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4688' security_auth.log`, "Keep only process-creation events, which is the only event type in this log that records a program running."],
+        [`+ grep -F 'Computer=sec-win-05'`, "Add the foothold host, so you see what ran on the compromised machine and nothing else."],
+        [`+ awk -F'|' '{print $1, $9}'`, "Add awk to reduce each event to a timestamp and a command line, which is the pair that makes a sequence readable."],
+        [`+ sort`, "Add sort, because the shared timestamp format is what turns a pile of records into a story with an order."],
+        [`+ cut -c1-120`, "Add cut to keep each line short enough to read on one screen."],
+      ])}
+      <div class="prose">
+        <p>Five processes in total, within about twelve minutes. Three of them are ordinary
+        reconnaissance, and they come first — so read them as a questionnaire.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4688' security_auth.log`, "Start from process creation again, because this box is about separating the recon tools from the ticket tool."],
+        [`+ grep -F 'Computer=sec-win-05'`, "Add the foothold host."],
+        [`+ grep -v -F 'Rubeus'`, "Exclude the ticket-handling tool, which is step 9 and step 11, leaving only the reconnaissance."],
+        [`+ wc -l`, "Count what is left, which is the number of recon commands the operator ran before touching a single ticket."],
+      ])}
+      <div class="callout tip"><div class="co-head">Answering three questions</div><div class="co-body">
+        <code>whoami.exe /all</code> answers <em>which identity am I actually running as, and with
+        what groups and privileges?</em> &nbsp;<code>klist.exe /netonly</code> answers <em>which
+        Kerberos tickets does this session hold, and for which domain?</em> &nbsp;
+        <code>adfind.exe</code> answers <em>which privileged groups exist in this domain?</em>
+        Together they are a careful operator establishing what they hold and what is worth
+        stealing — not a script kiddie spraying commands.
+      </div></div>
+      <div class="callout warn"><div class="co-head">None of these tools is evidence</div><div class="co-body">
+        All three appear dozens of times elsewhere in this same corpus, run by ordinary users on
+        ordinary workstations. <code>whoami</code> and <code>klist</code> are in the benign noise on
+        purpose. What makes this trio evidence is not the tool — it is the tool
+        <strong>on the compromised host</strong>, <strong>by the operator account</strong>,
+        <strong>at High integrity</strong>, and immediately before a Kerberos monitor started. Never
+        write up a binary name without its host and its account.
+      </div></div>
+      <div class="callout tip"><div class="co-head">The decoy for adfind</div><div class="co-body">
+        <code>adfind.exe</code> also appears nine times in this corpus on the
+        <strong>domain controller</strong>, run by administrators doing exactly what an
+        administrator should do. If you grep for the tool across the whole estate you get ten hits
+        and no answer. Only the <code>Computer</code> field separates the attacker's recon from
+        legitimate administration — which is why the host filter above is not optional.
+      </div></div>`,
+    checkpoint: "What were the three reconnaissance commands, and what question was each one answering? Why is finding the same tool elsewhere in the corpus not evidence against anyone?"
+  },
+  {
+    phase: "On the host",
+    title: "The Kerberos monitor",
+    goal: "Identify the process that means the operator was waiting for a victim rather than acting.",
+    tags: [{id:"T1550.003", name:"Pass the Ticket"}, {id:"T1558.003", name:"Kerberoasting"}],
+    body: `
+      <div class="prose">
+        <p>Two processes on the foothold are not reconnaissance. Take them out of the recon set and
+        look at them on their own — starting with the one that runs
+        <em>between</em> the recon and everything that follows.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4688' security_auth.log`, "Start from process creation, which is where both ticket operations are recorded."],
+        [`+ grep -F 'Computer=sec-win-05'`, "Add the foothold host, since these two processes exist nowhere else in the estate."],
+        [`+ grep -F 'Rubeus'`, "Add the ticket tool, which is the only thing on this host that manipulates Kerberos tickets."],
+        [`+ awk -F'|' '{print $1, $9}'`, "Add awk to reduce each to a timestamp and a command line, so you can read what it was asked to do."],
+        [`+ sort`, "Add sort to put the two events in the order they happened, which is the whole point of looking at them as a pair."],
+      ])}
+      <div class="prose">
+        <p>Read them as a pair and the intent is unambiguous. First a
+        <code>monitor</code> — start watching Kerberos traffic. Then, a few minutes later, a
+        <code>dump</code> — take a ticket out of memory. You do not start a monitor and then decide
+        what to do; you start a monitor <em>because</em> you are waiting for something to arrive.</p>
+      </div>
+      <div class="callout warn"><div class="co-head">A monitor is a trigger, not a tool</div><div class="co-body">
+        This is the step most analysts skip, and it is the one that identifies the technique. The
+        operator did not have an administrator's password and did not crack one. They set a watch
+        on the host and waited for a privileged authentication to <strong>happen to it</strong>.
+        That is the entire mechanism of unconstrained delegation, and the monitor command is the
+        moment it is set up.
+      </div></div>
+      ${L([
+        [`grep -F 'Rubeus' security_auth.log`, "Take every record mentioning the ticket tool anywhere in the corpus, to establish how rare it is."],
+        [`+ awk -F'|' '{print $1, $4, $5}'`, "Add awk to reduce each to a timestamp, a host and the account that ran it, which is what proves the tool never appears anywhere else."],
+        [`+ sort`, "Add sort so the two records sit in time order."],
+      ])}
+      ${L([
+        [`grep 'sec-win-05' sysmon_process.log`, "Take the foothold host in the Sysmon log, which records the parent process and the integrity level that Security does not."],
+        [`+ grep -o 'IntegrityLevel=[^|]*'`, "Add grep -o to pull just the integrity level, so you can see whether the operator was running elevated."],
+        [`+ sort`, "Add sort so identical integrity levels come together."],
+        [`+ uniq -c`, "Add uniq -c so each level becomes one line with a count."],
+      ])}
+      ${L([
+        [`grep -F 'Rubeus' sysmon_process.log`, "Take both executions of the ticket tool from the Sysmon log."],
+        [`+ grep -o 'ParentImage=[^|]*'`, "Add grep -o to pull the parent process field, which the Security log does not record at all."],
+        [`+ sort -u`, "Add sort -u so each parent appears once instead of once per execution."],
+      ])}
+      <div class="callout tip"><div class="co-head">Why Sysmon is worth the second file</div><div class="co-body">
+        The Security log gave you the command line. Sysmon gives you the
+        <strong>parent process</strong> and the <strong>integrity level</strong>. A ticket tool
+        launched from <code>cmd.exe</code> at High integrity, minutes after an interactive logon,
+        is a person at a keyboard with elevation. Neither fact is available in
+        <code>security_auth.log</code>, which is why the lab ships both.
+      </div></div>`,
+    checkpoint: "What were the two ticket operations, in what order, and what does running a monitor <em>before</em> the dump tell you about the operator's intent?"
+  },
+  {
+    phase: "On the host",
+    title: "The attacker's silence",
+    goal: "Find the operator by what stopped happening on their host, which is the quietest and most reliable signal in the corpus.",
+    tags: [{id:"T1071.004", name:"Application Layer Protocol: DNS"}],
+    body: `
+      <div class="prose">
+        <p>Nothing in steps 8 and 9 required the operator to touch the network, so look elsewhere:
+        the resolver log. Every host on this subnet generates background chatter, and a host that
+        suddenly goes quiet during an intrusion is telling you something.</p>
+      </div>
+      ${L([
+        [`grep 'client=10.0.4.11' dns_queries.log`, "Take every lookup made by the foothold host, which is the resolver traffic of the machine under attack."],
+        [`+ wc -l`, "Count it, so you know the size of this host's normal resolver behaviour."],
+      ])}
+      <div class="prose">
+        <p>Now split that by time. The intrusion runs from <code>09:41:00</code> to
+        <code>10:16:00</code>, and this is the awkward part of working with timestamps in these
+        files: they are strings, so comparing them is comparing text, and the
+        <code>+08:00</code> suffix is part of the string. Bound the window with the
+        <strong>full</strong> timestamps including the offset, or the boundary record silently
+        drops out of the middle of your own intrusion.</p>
+      </div>
+      ${L([
+        [`grep 'client=10.0.4.11' dns_queries.log`, "Back to the foothold host's lookups."],
+        [`+ awk -F'|' '$1>="2026-10-14T09:41:00+08:00" && $1<="2026-10-14T10:16:00+08:00"'`, "Add a window filter bounded by the full timestamps, including the timezone offset, so nothing at the edges is lost."],
+        [`+ wc -l`, "Count what the host resolved during the intrusion, which is a strikingly small number."],
+      ])}
+      ${L([
+        [`grep 'client=10.0.4.11' dns_queries.log`, "Take the same host's lookups, but keep the ones from before the intrusion instead."],
+        [`+ awk -F'|' '$1<"2026-10-14T09:41:00+08:00"'`, "Add a filter for the timestamps before the intrusion began, which gives you this host's ordinary resolver baseline to measure the intrusion against."],
+        [`+ wc -l`, "Count that baseline, so the contrast with the handful of lookups inside the window becomes a measured number rather than an impression."],
+      ])}
+      <div class="callout tip"><div class="co-head">Read the absence, not the presence</div><div class="co-body">
+        A hundred and twenty lookups before the intrusion and <strong>three</strong> inside it. The
+        operator was working, not browsing. And all three are internal name lookups for the three
+        hosts they were about to attack — the moment the host started resolving targets is the
+        moment it stopped behaving like a user.
+      </div></div>
+      ${L([
+        [`grep 'client=10.0.4.11' dns_queries.log`, "Return to the foothold host's lookups."],
+        [`+ awk -F'|' '$1>="2026-10-14T09:41:00+08:00" && $1<="2026-10-14T10:16:00+08:00"'`, "Add the window filter bounded by the full timestamps including the offset."],
+        [`+ cut -d'|' -f1,5`, "Add cut to keep the timestamp and the query itself, which turns three opaque lines into the operator's target list."],
+      ])}
+      <div class="callout tip"><div class="co-head">Your first real target list</div><div class="co-body">
+        <code>sec-win-04</code>, then <code>sec-win-06</code>, then <code>sec-win-07</code> — in that
+        order, seconds apart. Three names resolved <em>before</em> any of them authenticated. That
+        ordering is your first proof that the next step was planned rather than discovered.
+      </div></div>`,
+    checkpoint: "How many lookups did the foothold make during the intrusion compared with outside it, and what were the three it did make? What does the difference tell you about the operator?"
+  },
+  {
+    phase: "On the host",
+    title: "The LSASS dump",
+    goal: "Pin the exact moment the stolen ticket left memory, and prove what it was taken from.",
+    tags: [{id:"T1003.001", name:"LSASS Memory"}, {id:"T1550.003", name:"Pass the Ticket"}],
+    body: `
+      <div class="prose">
+        <p>Step 10 gave you a target list. Step 9 gave you a watch. The event that connects them is
+        a single process, and its position in the sequence is the whole finding.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4688' security_auth.log`, "Start from process creation, which is the only place the dump is recorded."],
+        [`+ grep -F 'Computer=sec-win-05'`, "Add the foothold host."],
+        [`+ grep -F 'Rubeus'`, "Add the ticket tool."],
+        [`+ grep -F 'dump'`, "Add the dump subcommand, which leaves the monitor behind and isolates the extraction."],
+        [`+ cut -d'|' -f1`, "Add cut to keep the timestamp, because when it ran is the entire point."],
+      ])}
+      <div class="prose">
+        <p>Now place it against the inbound session from step 5. This single comparison is what
+        turns two separate oddities into one attack.</p>
+      </div>
+      ${L([
+        [`grep -E 'EventID=4624|EventID=4688' security_auth.log`, "Take both event types at once, because the two halves of the story are a logon and a process and they must be read together."],
+        [`+ grep -E 'Computer=sec-win-05'`, "Add the foothold host, which is where both halves happened."],
+        [`+ awk -F'|' '{print $1, $3, $5, $9}'`, "Add awk to reduce each record to a timestamp, an event, an identity and a command, so the sequence is legible."],
+        [`+ sort`, "Add sort, and because both formats share one timestamp this is what proves the ordering rather than assuming it."],
+        [`+ cut -c1-135`, "Add cut to keep each line on one screen."],
+      ])}
+      <div class="callout warn"><div class="co-head">The ordering is the proof</div><div class="co-body">
+        The administrator's inbound remote-interactive session is at <code>09:51:02</code>. The
+        ticket dump is at <code>09:53:04</code>. The dump happened
+        <strong>after</strong> the credential arrived and <strong>while that session was still
+        open</strong> — you can see the session has no logoff anywhere near it. The operator did not
+        steal a ticket from a backup or a cache. They stole it out of live memory, seconds after
+        the domain walked it onto the machine.
+      </div></div>
+      <div class="callout tip"><div class="co-head">Why the tool name in the log is the evidence</div><div class="co-body">
+        The dump command names the logon it is targeting. This is a real artefact of how the tool
+        works, and it is why the case can be closed without guessing: the command line records
+        <em>which session</em> was harvested. If yours does not carry that, the correlation still
+        holds on timing alone — but say which evidence you actually have.
+      </div></div>
+      ${L([
+        [`grep -F 'Computer=sec-win-05' sysmon_process.log`, "Take the foothold host in the Sysmon log, which records the hash of every image that ran."],
+        [`+ grep -F 'Rubeus'`, "Add the ticket tool."],
+        [`+ grep -o 'SHA256=[^|]*'`, "Add grep -o to pull the image hash, which is the indicator you would actually block or hunt on."],
+        [`+ sort -u`, "Add sort -u so each distinct binary appears once rather than once per execution."],
+      ])}
+      <div class="callout tip"><div class="co-head">What you would hand to detection engineering</div><div class="co-body">
+        Not \"Rubeus was run\". A specific image hash, on a specific host, launched from
+        <code>cmd.exe</code> at High integrity, within two minutes of a remote-interactive
+        privileged logon. That is a rule someone can deploy across a thousand hosts. A tool name
+        is not.
+      </div></div>`,
+    checkpoint: "At what time did the ticket leave memory, and what happened two minutes earlier? Why does the order of those two events matter more than either one alone?"
+  },
+  {
+    phase: "Lateral movement",
+    title: "Three sessions, one ticket",
+    goal: "Establish the lateral movement, its victims and its blast radius, and prove that no password was ever used.",
+    tags: [{id:"T1550.003", name:"Pass the Ticket"}, {id:"T1021.002", name:"SMB/Windows Admin Shares"}],
+    body: `
+      <div class="prose">
+        <p>Now the payoff. You already know the account, the source and the three hostnames from
+        steps 4 and 6. This step is about the shape of the movement — because a legitimate
+        administrator also opens sessions on multiple servers, and telling the two apart is the
+        entire analytical problem.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons, where every session in the estate is recorded."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the stolen identity."],
+        [`+ grep 'LogonType=3'`, "Add the network logon type, which is what a replayed ticket produces and what a person at a keyboard does not."],
+        [`+ awk -F'|' '{print $1, $4, $8}'`, "Add awk to reduce each session to a timestamp, the host it landed on and the address it came from — the three fields that describe movement."],
+        [`+ sort`, "Add sort, because a lateral movement chart is a timeline and this is what builds it."],
+      ])}
+      <div class="prose">
+        <p>Three servers. Six minutes. One source address. And at the end of it,
+        <code>sec-win-05</code> — the compromised workstation — is the only host that appears as a
+        source. Take the distinct source addresses to make that explicit.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Back to the successful logons for the distinct-source count."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the stolen identity."],
+        [`+ grep 'LogonType=3'`, "Add the network type again."],
+        [`+ grep -o 'IpAddress=[^|]*'`, "Add grep -o to pull the source address out of each of the three."],
+        [`+ sort -u`, "Add sort -u so each address appears once, turning three sessions into a count of sources."],
+      ])}
+      <div class="callout warn"><div class="co-head">The strongest single fact in the lab</div><div class="co-body">
+        One source address, three victims, six minutes, <strong>and not one interactive logon
+        anywhere</strong> — remember step 4's zero. No administrator in an estate opens sessions on
+        three servers in six minutes without ever sitting at a keyboard. Replaying a ticket does
+        exactly that, because the ticket carries the identity and nothing else: no session, no
+        keyboard, no human.
+      </div></div>
+      <div class="prose">
+        <p>Check the privilege events too, so you can state whether these were genuinely elevated
+        sessions rather than assuming it from the account name.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4672' security_auth.log`, "Keep only the special-privilege events, which record a privileged token actually being created."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the stolen identity."],
+        [`+ awk -F'|' '{print $1, $4}'`, "Add awk to reduce each to a timestamp and a host, which shows you which sessions were elevated and where."],
+        [`+ sort`, "Add sort so they read in the order they were created."],
+      ])}
+      <div class="callout tip"><div class="co-head">Three hosts are victims, not compromised hosts</div><div class="co-body">
+        Only <code>sec-win-05</code> was compromised — it is where the operator worked. The three
+        that received the session were <em>used</em>: a session opened on them and nothing was
+        executed on two of them at all. Keeping those words apart is the difference between a
+        containment list of one machine and an island of four, and it is the first thing an
+        incident responder will ask you.
+      </div></div>`,
+    checkpoint: "How many hosts received the session, from how many source addresses, over how long? What makes this pattern impossible for a legitimate administrator?"
+  },
+  {
+    phase: "Lateral movement",
+    title: "Credential staging on the first target",
+    goal: "Show that the intrusion did not stop at a session, and identify the one host where the operator actually worked.",
+    tags: [{id:"T1003.002", name:"Security Account Manager"}],
+    body: `
+      <div class="prose">
+        <p>Opening a session and <em>doing something</em> with it are different events, and only one
+        of them leaves a process log. Find out where work actually happened.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4688' security_auth.log`, "Keep only process creations, which is the only event type that shows a host being used rather than merely reached."],
+        [`+ grep -F 'SubjectUserName=Administrator'`, "Add the stolen identity, so you see the work done under it rather than every process in the estate."],
+        [`+ awk -F'|' '{split($4,c,"="); print c[2]}'`, "Add awk to strip the domain off the Computer field, leaving the bare hostname of each host where work happened."],
+        [`+ sort`, "Add sort so identical hostnames come together."],
+        [`+ uniq -c`, "Add uniq -c so each host becomes one line with a count of the processes run on it."],
+        [`+ sort -rn`, "Rank by that count, so the host that was actually worked on is at the top."],
+      ])}
+      <div class="callout tip"><div class="co-head">Only one of the three was touched</div><div class="co-body">
+        The sessions reached three servers, but process creation happened on
+        <strong>one</strong> of them. That is the difference between a host that was authenticated
+        against and a host that was compromised, and it is exactly the distinction your containment
+        list depends on.
+      </div></div>
+      ${L([
+        [`grep 'EventID=4688' security_auth.log`, "Start from process creation to read what was actually run."],
+        [`+ grep -F 'SubjectUserName=Administrator'`, "Add the stolen identity."],
+        [`+ awk -F'|' '{print $1, $8, $9}'`, "Add awk to reduce each to a timestamp, the image and the command line, which is where the intent is written in plain text."],
+        [`+ sort`, "Add sort to put the two commands in order."],
+      ])}
+      <div class="callout warn"><div class="co-head">What the two commands mean</div><div class="co-body">
+        <code>reg.exe save HKLM\\SAM</code> exports the local credential hive to a file on the
+        machine it just came from — that is offline credential theft, and it needs no malware. Then
+        <code>cmd.exe /c net use \\\\SEC-WIN-04\\IPC$</code> opens an administrative share on the
+        host the operator is <em>already</em> on, which is what a staged collection looks like
+        immediately before it is copied off.
+      </div></div>
+      <div class="prose">
+        <p>Read the hive name off the command line rather than recognising it, and confirm it is the
+        only one in the corpus.</p>
+      </div>
+      ${L([
+        [`grep -F 'reg.exe save' security_auth.log`, "Take the hive-export command wherever it appears in the estate."],
+        [`+ grep -o 'SAM'`, "Add grep -o to pull the hive name out of the command line, which is the detail your report has to state exactly."],
+        [`+ sort -u`, "Add sort -u so each hive appears once rather than once per export."],
+      ])}
+      ${L([
+        [`grep -F 'reg.exe save' security_auth.log`, "Take every hive export anywhere in the estate, so you can judge whether this was a habit or a single decision."],
+        [`+ wc -l`, "Count them, and a count of one is what lets you call it a targeted action rather than a routine."],
+      ])}
+      ${L([
+        [`grep -F 'adfind' security_auth.log`, "Take every discovery-tool record in the estate, which is more of them than you want."],
+        [`+ grep -c 'Computer=sec-srv-dc01'`, "Add the domain controller and count, so the legitimate administrators are not reported as an operator."],
+      ])}
+      ${L([
+        [`grep -F 'adfind' security_auth.log`, "Start again from every discovery-tool record in the estate."],
+        [`+ grep 'Computer=sec-win-05'`, "Add the foothold host, and watch the list collapse to a single line."],
+        [`+ wc -l`, "Count it, so you can state that the tool appears all over this domain and on exactly one of those hosts it is the operator's."],
+      ])}
+      <div class="callout tip"><div class="co-head">Counting the estate, then counting the host</div><div class="co-body">
+        A tool appearing ten times in a domain means nothing. The same tool appearing on the one
+        compromised host, by the one operator account, three minutes before a Kerberos monitor
+        started, means everything. Always narrow from the population to the host before you write a
+        single word of finding.
+      </div></div>`,
+    checkpoint: "On how many of the three impersonated hosts did processes actually run, and what were they? Which registry hive was exported, and how many times across the whole estate?"
+  },
+  {
+    phase: "Lateral movement",
+    title: "The staged exfiltration",
+    goal: "Find the data leaving the estate, prove it is an outlier rather than a large backup, and name the hosts it went between.",
+    tags: [{id:"T1041", name:"Exfiltration Over C2 Channel"}, {id:"T1021.002", name:"SMB/Windows Admin Shares"}],
+    body: `
+      <div class="prose">
+        <p>There is one more thing to find, and it is the only thing in this corpus that crosses the
+        network boundary. The firewall export has a byte count, and the scenario's threshold is
+        <strong>600000</strong> — apply it and see what survives.</p>
+      </div>
+      ${L([
+        [`awk -F'|' '{split($9,b,"="); if (b[2]+0 > 600000) print $1, $5, $7, $9}' network_flows.log`, "Apply the byte threshold and print the timestamp, both endpoints and the byte count of anything above it."],
+        [`+ wc -l`, "Add wc -l to count how many connections clear that bar, which should be a short enough list to read."],
+      ])}
+      ${L([
+        [`awk -F'|' '{split($9,b,"="); if (b[2]+0 > 600000) print $11, $12}' network_flows.log`, "Take the two hostname fields of the oversized connections, which resolves both ends without consulting another file."],
+        [`+ sort -u`, "Add sort -u so each host pair appears once."],
+      ])}
+      <div class="prose">
+        <p>An outlier is only convincing if you know what the next largest transfer looked like.
+        Find the biggest connection that stayed <em>under</em> the threshold.</p>
+      </div>
+      ${L([
+        [`awk -F'|' '{split($9,b,"="); if (b[2]+0 <= 600000) print b[2]}' network_flows.log`, "Print the byte count of every connection that stayed under the threshold, so the near misses are visible."],
+        [`+ sort -rn`, "Add sort -rn so the largest of those is at the top."],
+        [`+ head -1`, "Take just that one, because it is the number that has to be smaller than yours for your finding to stand up."],
+      ])}
+      <div class="callout warn"><div class="co-head">Justify it, do not assert it</div><div class="co-body">
+        The one oversized transfer went from <code>sec-win-05</code> — the compromised workstation
+        — to <code>sec-win-04</code>, the first host that received the stolen ticket, eleven minutes
+        after the credential hive was exported there. That sequence is the argument: the data left
+        <em>after</em> it was collected, in the direction of the compromise, and the largest
+        legitimate transfer in the estate is well under half of it. Size alone would not be enough.
+        Direction and sequence are what make it exfiltration.
+      </div></div>
+      ${L([
+        [`grep -F '10.0.4.11:' network_flows.log`, "Take every connection sourced from the compromised address, which is a small enough set to read in full."],
+        [`+ wc -l`, "Count them, and notice how little network activity that host generated during the whole intrusion."],
+      ])}
+      <div class="callout tip"><div class="co-head">One connection, and that is the point</div><div class="co-body">
+        The operator barely used the network. They authenticated, they worked locally, and they
+        copied once. There is no beaconing, no command-and-control channel and no bulk transfer to
+        find — which is why a rule that alerts on volume would never have fired here, and why you
+        needed the authentication log to get here at all.
+      </div></div>`,
+    checkpoint: "How many connections exceed 600,000 bytes, between which two hosts, and how do you justify calling that exfiltration rather than a large legitimate copy?"
+  },
+  {
+    phase: "Analysis",
+    title: "Rebuild the timeline",
+    goal: "Merge all five logs and sort them, so the ordering of every step of the intrusion is proven rather than assumed.",
+    tags: [],
+    body: `
+      <div class="prose">
+        <p>All five files share one timestamp format, so <code>sort</code> can interleave them. That
+        is the only honest way to state a sequence: concatenate, filter, sort, and read. First take
+        the window from the operator account, because every later stage is bounded by it.</p>
+      </div>
+      ${L([
+        [`grep -h jdoe security_auth.log sysmon_process.log`, "Merge the two process-bearing logs and keep every record that mentions the operator account."],
+        [`+ cut -d'|' -f1`, "Add cut to keep only the timestamp column."],
+        [`+ sort -u`, "Add sort -u so each distinct moment appears once."],
+        [`+ sed -n '1p;$p'`, "Add sed to print the first and last of those lines together, which is the window you will quote in your report."],
+      ])}
+      <div class="prose">
+        <p>Thirty-five minutes, and every stage of this intrusion fits inside it. Now find every
+        record in the corpus that mentions anything from the attack, before narrowing anything, so
+        you can see how much noise one pattern touches.</p>
+      </div>
+      ${L([
+        [`cat *.log`, "Merge all five files into one stream, because the whole point is that they share a timestamp format."],
+        [`+ grep -E 'TargetUserName=jdoe|SubjectUserName=jdoe|Rubeus\\.exe|reg\\.exe save|TargetUserName=Administrator|srchost=sec-win-05|client=10\\.0\\.4\\.11'`, "Add one pattern that catches the operator account, both logs' process records, the ticket tool, the hive export, the stolen identity, the compromised host's flows and its resolver traffic."],
+        [`+ wc -l`, "Add wc -l so you get the size of that pattern across the whole corpus rather than reading it."],
+      ])}
+      ${L([
+        [`cat *.log`, "Merge all five files again."],
+        [`+ grep -E 'TargetUserName=jdoe|SubjectUserName=jdoe|Rubeus\\.exe|reg\\.exe save|TargetUserName=Administrator|srchost=sec-win-05|client=10\\.0\\.4\\.11'`, "Add the same pattern."],
+        [`+ awk -F'|' '$1 >= "2026-10-14T09:41:00+08:00" && $1 <= "2026-10-14T10:16:00+08:00"'`, "Add a window filter bounded by the full timestamps including the offset, which drops out the operator's ordinary background traffic."],
+        [`+ wc -l`, "Add wc -l to count what survives, which is short enough to read line by line."],
+      ])}
+      ${L([
+        [`cat *.log`, "Merge all five files a third time."],
+        [`+ grep -E 'TargetUserName=jdoe|SubjectUserName=jdoe|Rubeus\\.exe|reg\\.exe save|TargetUserName=Administrator|srchost=sec-win-05|client=10\\.0\\.4\\.11'`, "Add the same pattern."],
+        [`+ awk -F'|' '$1 >= "2026-10-14T09:41:00+08:00" && $1 <= "2026-10-14T10:16:00+08:00"'`, "Add the window filter."],
+        [`+ grep -E 'Computer=sec-win-0[4567]\\.|srchost=sec-win-05|client=10\\.0\\.4\\.11'`, "Add a host filter, so only the compromised host and the three it impersonated onto remain."],
+        [`+ cut -d'|' -f1,3,4`, "Add cut to keep the timestamp, the event and the host, which is the whole timeline on one line each."],
+        [`+ sort`, "Add sort last, and because the timestamps share one format this is what puts the intrusion in order."],
+      ])}
+      <div class="callout tip"><div class="co-head">Check the ordering, do not assume it</div><div class="co-body">
+        The merged sort should place the recon trio before the Kerberos monitor, the monitor before
+        the coerced administrator logon, the dump <em>after</em> that logon, the three delegated
+        sessions after the dump, the hive export after those, the transfer after the export, and
+        the logoff last. If any of those is out of order you have misunderstood something — go
+        back rather than writing it up.
+      </div></div>
+      <div class="timeline">
+        <div class="tl-item" data-sev="warn"><div class="tl-time">09:41:00</div><div class="tl-txt">Interactive logon for <b>jdoe</b> on <b>sec-win-05</b> (10.0.4.11) — the foothold session. The only logon this account ever makes.</div></div>
+        <div class="tl-item" data-sev="warn"><div class="tl-time">09:45:02 – 09:45:12</div><div class="tl-txt">Recon trio at High integrity: <b>whoami.exe /all</b>, <b>klist.exe /netonly</b>, <b>adfind.exe</b> — establish the identity, its tickets and the domain's privileged groups.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">09:48:59</div><div class="tl-txt"><b>Rubeus.exe monitor</b> starts on sec-win-05. The operator is not acting yet — they are waiting.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">09:51:02</div><div class="tl-txt">The trigger: <b>CORP\Administrator</b> opens a <b>remote interactive</b> Kerberos session on sec-win-05, from the DC (10.0.4.10). A domain admin authenticating into a workstation.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">09:51:04</div><div class="tl-txt">Special privileges granted to Administrator on sec-win-05 — 4672 confirms the token really was elevated.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">09:53:04</div><div class="tl-txt"><b>Rubeus.exe dump</b> pulls the ticket out of LSASS while that session is still open. No password was cracked at any point.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">09:54:01 – 09:54:19</div><div class="tl-txt">Three internal lookups from sec-win-05: sec-win-04, sec-win-06, sec-win-07 — the target list, in attack order.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">09:55:57 – 10:01:57</div><div class="tl-txt">The replay: <b>Administrator</b> network logons on <b>sec-win-04</b>, <b>sec-win-06</b> and <b>sec-win-07</b>, all from 10.0.4.11, all with a fresh privileged token. Six minutes, three servers, no keyboard.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">10:06:02</div><div class="tl-txt"><code>reg.exe save HKLM\SAM</code> on sec-win-04 — the only host where anything was actually executed.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">10:06:05</div><div class="tl-txt"><code>cmd.exe /c net use \\SEC-WIN-04\IPC$</code> opens the administrative share on the host the credential was just taken from.</div></div>
+        <div class="tl-item" data-sev="bad"><div class="tl-time">10:11:04</div><div class="tl-txt">A single <b>741,639-byte</b> SMB transfer, sec-win-05 → sec-win-04 — the exfiltration. Nothing else crosses the boundary.</div></div>
+        <div class="tl-item" data-sev="warn"><div class="tl-time">10:16:00</div><div class="tl-txt">jdoe logs off sec-win-05. Last event in the window — and not a remediation.</div></div>
+      </div>`,
+    checkpoint: "Reconstruct the intrusion in order from your own merged sort. Does the dump really come after the coerced logon, and does the logoff come last?"
+  },
+  {
+    phase: "Analysis",
+    title: "Confirm the session end",
+    goal: "Establish when the intrusion stopped, and be precise about what a logoff does and does not prove.",
+    tags: [],
+    body: `
+      <div class="prose">
+        <p>Knowing when the operator disconnected matters more than it sounds: it bounds every
+        action to half an hour, it tells incident response when the estate was last touched, and
+        it tells you whether this was a single sitting.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4634' security_auth.log`, "Keep only the logoff records, which is what closes a session."],
+        [`+ grep -F 'TargetUserName=jdoe'`, "Add the operator account, so you see when this particular session ended."],
+        [`+ cut -d'|' -f1,4`, "Add cut to keep the timestamp and the host, which is the pair that bounds the intrusion."],
+      ])}
+      ${L([
+        [`grep -h jdoe security_auth.log sysmon_process.log`, "Merge the two logs and take every record mentioning the operator."],
+        [`+ cut -d'|' -f1`, "Add cut to keep the timestamp."],
+        [`+ sort -u`, "Add sort -u so each distinct moment appears once."],
+        [`+ wc -l`, "Add wc -l to count those moments, which is small because the footprint is small."],
+      ])}
+      <div class="prose">
+        <p>Eleven distinct moments across the whole intrusion. That is the entire footprint, and it
+        is worth writing down as a number — it is the difference between \"an incident\" and
+        \"an incident with a known size\". Now check whether the account ever came back.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Keep only the successful logons."],
+        [`+ grep -F 'TargetUserName=jdoe'`, "Add the operator account, so you see every time it authenticated successfully."],
+        [`+ awk -F'|' '$7=="LogonType=2"'`, "Add the interactive type, which is how you check whether it ever reconnected after logging off."],
+        [`+ wc -l`, "Count them, and notice that one is the answer: it signed in once and stayed."],
+      ])}
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Start from the successful logons again to test the stolen identity the same way."],
+        [`+ grep -F 'TargetUserName=Administrator'`, "Add the identity whose ticket was stolen."],
+        [`+ awk -F'|' '$7=="LogonType=2"'`, "Add the interactive type, which is the only kind that needs a person at a keyboard."],
+        [`+ wc -l`, "Count them, because zero interactive logons is the single most damaging fact in this case and rules out an administrator simply doing their job."],
+      ])}
+      <div class="callout warn"><div class="co-head">What 4634 does not mean</div><div class="co-body">
+        A logoff means <em>this session</em> ended. It does not mean the operator left, and it does
+        not mean the access was removed. The stolen ticket is still valid until it expires, the
+        exported SAM hive is still on disk, and the collected data is already gone. Treat 4634 as
+        the end of the intrusion <em>window</em>, never as remediation — and say so in your report,
+        because it is the sentence that stops somebody closing the ticket at 10:16.
+      </div></div>`,
+    checkpoint: "How many distinct moments make up the intrusion footprint, and how long was the window? Why is a logoff a boundary and not a fix?"
+  },
+  {
+    phase: "Analysis",
+    title: "Dismiss the noise",
+    goal: "Prove that the loudest things in this corpus are innocent, so nobody can tell you your finding was a false positive.",
+    tags: [],
+    body: `
+      <div class="prose">
+        <p>Every log here is mostly noise, and the noise was built to be tempting. Each decoy below
+        looks like a finding until you apply the one test that separates it. Start with the loudest
+        failures, because a burst of failed logons is the first thing anyone will point at.</p>
+      </div>
+      ${L([
+        [`grep 'EventID=4625' security_auth.log`, "Keep only the failed logons, which is where false positives live."],
+        [`+ awk -F'|' '{split($5,u,"="); split($8,i,"="); print u[2], i[2]}'`, "Add awk to reduce each failure to the pair that matters, the account and the address it came from."],
+        [`+ sort`, "Add sort so identical pairs come together."],
+        [`+ uniq -c`, "Add uniq -c so each pair becomes one line with a count."],
+        [`+ sort -rn`, "Rank by that count, which puts the loudest failure burst at the top."],
+        [`+ head -5`, "Keep the top five, because the tail of two-failure pairs would dilute the answer."],
+      ])}
+      ${L([
+        [`grep 'EventID=4625' security_auth.log`, "Confirm the burst came from one address, which is consistent with a service retrying and not with an intruder spreading guesses."],
+        [`+ grep -F 'TargetUserName=svc_backup'`, "Add the account that ranked loudest, so you see every failure it owns."],
+        [`+ grep -o 'IpAddress=[^|]*'`, "Add grep -o to pull the source address out of each of those failures."],
+        [`+ sort -u`, "Add sort -u so each address appears once, which is what proves the whole burst came from a single source."],
+      ])}
+      ${L([
+        [`grep 'EventID=4625' security_auth.log`, "Read the first of those failures, which is what identifies the actual cause."],
+        [`+ grep -F 'TargetUserName=svc_backup'`, "Add the loudest account."],
+        [`+ cut -d'|' -f1,12,13`, "Add cut to keep the timestamp, the status and the substatus, which is the field that explains a whole burst at once."],
+        [`+ head -3`, "Read the first three, so you can see the status that accounts for all twelve."],
+      ])}
+      <div class="callout tip"><div class="co-head">Decoy one: the disabled service account</div><div class="co-body">
+        <code>svc_backup</code> fails twelve times from one address with status
+        <code>0xC0000071</code>. That code is not a wrong password — it is
+        <strong>account disabled</strong>. Nothing is being guessed, and nothing is being spread:
+        one misconfigured scheduled task, retrying on a timer. A loud burst from a
+        <em>single</em> source with a status that explains it is a configuration fault, not an
+        intrusion.
+      </div></div>
+      ${L([
+        [`grep 'EventID=4624' security_auth.log`, "Now take the decoy that is hardest to dismiss, because it reaches exactly the same three servers as the attack."],
+        [`+ grep -F 'TargetUserName=admin.svc'`, "Add the service account that legitimately sweeps those servers."],
+        [`+ awk -F'|' '{split($4,c,"="); print c[2]}'`, "Add awk to reduce each of its sessions to the host it landed on."],
+        [`+ sort -u`, "Add sort -u so each host appears once, which is what makes the overlap with the attack visible."],
+      ])}
+      <div class="callout tip"><div class="co-head">Decoy two: the account that reaches the same three hosts</div><div class="co-body">
+        <code>admin.svc</code> lands on <code>sec-win-04</code>, <code>sec-win-06</code> and
+        <code>sec-win-07</code> too. If you built your finding on \"one account reached three
+        servers\", you would have reported a false positive. What separates them is cadence, source
+        and context: <code>admin.svc</code> always comes <strong>from the domain controller</strong>,
+        over <strong>hours</strong>, with a <strong>matching logoff</strong> after every round —
+        and no privileged inbound session ever preceded it. This is why the finding rests on the
+        inbound coercion and the missing keyboard, not on a count.
+      </div></div>
+      ${L([
+        [`awk -F'|' '$3=="REFUSED"{split($7,d,":"); print d[2]}' network_flows.log`, "Take the destination port of every refused connection, which is the only field that tells a retry from a sweep."],
+        [`+ sort`, "Add sort so identical ports come together."],
+        [`+ uniq -c`, "Add uniq -c so each port becomes one line with a count."],
+        [`+ sort -rn`, "Rank by that count, and check whether the ports are a few fixed ones or a long ascending range."],
+      ])}
+      ${L([
+        [`awk -F'|' '$3=="RESET"{split($5,a,":"); print a[1]}' network_flows.log`, "Take the source address of every reset in the corpus."],
+        [`+ sort -u`, "Add sort -u so each source appears once."],
+        [`+ tr '\\n' ' '`, "Add tr to put them on one line, which makes it obvious at a glance whether the compromised address is among them."],
+      ])}
+      ${L([
+        [`grep -F 'adfind' security_auth.log`, "Take every discovery-tool record in the estate, which is more than you want."],
+        [`+ grep -c 'Computer=sec-srv-dc01'`, "Add the domain controller and count, so the legitimate administrators are not reported as an operator."],
+      ])}
+      <div class="callout tip"><div class="co-head">Decoys three, four and five</div><div class="co-body">
+        <b>Refused connections</b> go to three fixed ports — 9100, 631 and 8081, which are two
+        printers and one application — so they are a misconfigured service retrying, not a sweep.
+        &nbsp;<b>Every reset</b> in the corpus comes from one of eight innocent addresses; the
+        compromised address produces none at all, so the attacker is identifiable partly by an
+        absence. &nbsp;<b>Nine administrators</b> ran the same discovery command on the domain
+        controller, which is what legitimate use looks like and the reason a tool name is never
+        evidence on its own.
+      </div></div>`,
+    checkpoint: "Name each decoy in this corpus and state the single test that distinguishes it from the intrusion. Which address produced no reset traffic at all, and why does an absence count as evidence?"
+  },
+  {
+    phase: "Report",
+    title: "Write and export your report",
+    goal: "Answer from your own evidence, self-check the factual fields, then export the graded document.",
+    tags: [],
+    report: true,
+    body: `<div class="prose"><p>Everything below is filled in from <em>your</em> findings in the
+      terminal — this form does not look anything up for you. <b>Check my answers</b> compares the
+      factual questions with the evidence (a learning aid); <b>Export PDF report</b> produces the
+      document your teacher grades, including your notes and a log of the commands you actually
+      ran. The last two questions are marked by your teacher.</p></div>`,
+    checkpoint: "Before exporting: does your narrative name the operator account, all four hosts, the logon type that gives the attack away, the tooling, the exfiltration and the timings? Does every recommendation map to a specific finding, and does it say what still has to be checked in Active Directory?"
+  }
+];
+
+/* ===========================================================================
+   PART 2 — ANSWER KEY, STATE, RENDERING
+   =========================================================================== */
+const GROUND = {
+  q1:  {kind:"exact", value:"5"},
+  q2:  {kind:"exact", value:"7456"},
+  q3:  {kind:"set",   value:["4624","4625","4634","4672","4688"]},
+  q4:  {kind:"exact", value:"1330"},
+  q5:  {kind:"exact", value:"162"},
+  q6:  {kind:"exact", value:"12"},
+  q7:  {kind:"exact", value:"4"},
+  q8:  {kind:"exact", value:"3"},
+  q9:  {kind:"exact", value:"1"},
+  q10: {kind:"exact", value:"0"},
+  q11: {kind:"exact", value:"10.0.4.10"},
+  q12: {kind:"exact", value:"10.0.4.11"},
+  q13: {kind:"set",   value:["10.0.4.12","10.0.4.21","10.0.4.22"]},
+  q14: {kind:"exact", value:"4"},
+  q15: {kind:"exact", value:"5"},
+  q16: {kind:"exact", value:"3"},
+  q17: {kind:"exact", value:"2"},
+  q18: {kind:"exact", value:"3"},
+  q19: {kind:"has",   value:"SAM"},
+  q20: {kind:"exact", value:"1"},
+  q21: {kind:"exact", value:"741639"},
+  q22: {kind:"has",   value:"svc_backup"},
+  q23: {kind:"all",   value:["09:41","10:16"]},
+  q24: {kind:"exact", value:"0"}
+};
+
+const QUESTIONS = [
+  {id:"q1",  label:"How many evidence (log) files are in the lab folder?",
+   hint:"One number. Count what ls shows.", ph:"e.g. 5"},
+  {id:"q2",  label:"How many lines are there in total across all five logs?",
+   hint:"The total line of wc -l *.log.", ph:"e.g. 1234"},
+  {id:"q3",  label:"Which EventIDs appear in security_auth.log?",
+   hint:"All of them, comma separated.", ph:"e.g. 4624, 4625"},
+  {id:"q4",  label:"How many successful logons (4624) are in the whole authentication log?",
+   hint:"Count every one of them, not a sample.", ph:"e.g. 1330"},
+  {id:"q5",  label:"How many failed logons (4625) are there in total?",
+   hint:"Failures are where this lab's decoys live, so get the population.", ph:"e.g. 162"},
+  {id:"q6",  label:"How many successful logons landed on the workstation sec-win-05?",
+   hint:"Count on the Computer field, not the source address.", ph:"e.g. 12"},
+  {id:"q7",  label:"How many successful logons anywhere in the corpus were for the account Administrator?",
+   hint:"Every logon type counts here, not just the network ones.", ph:"e.g. 4"},
+  {id:"q8",  label:"Of those, how many were LogonType 3 (network) logons?",
+   hint:"Filter the same set on the logon type field.", ph:"e.g. 3"},
+  {id:"q9",  label:"How many were LogonType 10 (remote interactive) logons?",
+   hint:"Same set, a different logon type.", ph:"e.g. 1"},
+  {id:"q10", label:"How many were LogonType 2 (interactive, i.e. someone at the keyboard) logons?",
+   hint:"The same set again. Zero is a real answer and a very good one.",
+   ph:"e.g. 0"},
+  {id:"q11", label:"Which address did that remote-interactive Administrator logon come from?",
+   hint:"The IpAddress field of the single LogonType 10 record.", ph:"e.g. 10.0.4.x"},
+  {id:"q12", label:"Which address did all three network Administrator logons come from?",
+   hint:"The IpAddress field of the LogonType 3 records. One address, three times.",
+   ph:"e.g. 10.0.4.x"},
+  {id:"q13", label:"Which three servers received a network logon for Administrator?",
+   hint:"The Computer field of those three records gives hostnames; look the addresses up in dhcp_leases.log. Give the addresses.",
+   ph:"e.g. 10.0.4.x, 10.0.4.y, 10.0.4.z"},
+  {id:"q14", label:"How many special-privilege events (4672) did the account Administrator generate?",
+   hint:"4672 is raised when a privileged token is created.", ph:"e.g. 4"},
+  {id:"q15", label:"How many processes were created on sec-win-05 in total?",
+   hint:"Count process creations on that one host.", ph:"e.g. 5"},
+  {id:"q16", label:"How many of those were reconnaissance rather than ticket handling?",
+   hint:"Split the previous answer by tool: the credential-listing tools versus the ticket tool.",
+   ph:"e.g. 3"},
+  {id:"q17", label:"How many of those were Rubeus ticket operations?",
+   hint:"The other half of the previous answer.", ph:"e.g. 2"},
+  {id:"q18", label:"How many distinct hostnames received the impersonated Administrator session?",
+   hint:"Count the distinct Computer values behind the LogonType 3 records.",
+   ph:"e.g. 3"},
+  {id:"q19", label:"Which registry hive was extracted from sec-win-04?",
+   hint:"Read it off the reg.exe command line. One word.", ph:"e.g. HIVE"},
+  {id:"q20", label:"How many connections in the estate exceed 600000 bytes?",
+   hint:"Apply the threshold to the bytes field, then count.", ph:"e.g. 1"},
+  {id:"q21", label:"Exactly how many bytes did that transfer carry?",
+   hint:"Read the byte count off the flow record.", ph:"e.g. 1234567"},
+  {id:"q22", label:"Which benign account has the most failed logons (4625) from a single source address?",
+   hint:"Rank account plus source pairs, exactly as step 17 does.", ph:"a service account"},
+  {id:"q23", label:"What was the intrusion window?",
+   hint:"The first and last timestamps for the operator account, as start then end.",
+   ph:"e.g. 09:41 then 10:16"},
+  {id:"q24", label:"How many RESET events came from the compromised address 10.0.4.11?",
+   hint:"Check the firewall verdict field against that one source address.", ph:"e.g. 0"}
+];
+
+const ESSAY = [
+  {id:"q25", label:"Attack chain narrative",
+   hint:"Six to nine sentences: foothold session → recon trio → Rubeus monitor → the coerced " +
+        "domain-administrator logon INTO the foothold → LSASS ticket dump → three impersonated " +
+        "Administrator network sessions → registry hive staging → exfiltration → session end. " +
+        "Name the operator account, all four hosts, the logon type that gives the attack away, " +
+        "the tool, the exact times, and say what each artefact proves and what it cannot.",
+   rows:"8"},
+  {id:"q26", label:"Containment and remediation recommendations",
+   hint:"Four recommendations. For each one name the specific finding it answers. Delegation " +
+        "configuration, LSASS protection, the credential reset and east-west monitoring all map " +
+        "to an observation in this lab. Be explicit about which host you would isolate first and " +
+        "why the three impersonation targets are victims rather than compromised hosts, and say " +
+        "what you still have to check in Active Directory to confirm the root cause.",
+   rows:"7"}
+];
+const LS = {
+  get(k, fb){ try{ const v = localStorage.getItem("ctia:" + k); return v === null ? fb : JSON.parse(v); }
+              catch(e){ return fb; } },
+  set(k, v){ try{ localStorage.setItem("ctia:" + k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem("ctia:" + k); }catch(e){} }
+};
+
+const state = {
+  step: LS.get("step", 0),
+  visited: new Set(LS.get("visited", [])),
+  ran: LS.get("ran", []),
+  notes: LS.get("notes", {}),
+  answers: LS.get("answers", {}),
+  checked: LS.get("checked", null),
+  port: LS.get("port", null)
+};
+if (!(state.step >= 0 && state.step < STEPS.length)) state.step = 0;
+
+/* -------------------------------------------------------------- helpers --- */
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9.\-:]/.g, " ").replace(/\s+/g," ").trim();
+const tokenList = (s) => norm(s).split(/[\s,;]+/).filter(Boolean);
+
+let toastTimer = null;
+function toast(msg){
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 1900);
+}
+async function copyText(text, label){
+  try{
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+    else {
+      const ta = el("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    if (label){
+      const old = label.textContent;
+      label.textContent = "Copied";
+      setTimeout(() => { label.textContent = old; }, 1100);
+    }
+    return true;
+  }catch(e){ toast("Copy failed — select the command and copy manually."); return false; }
+}
+
+/* ------------------------------------------------------------ step rail --- */
+function renderRail(){
+  const host = $("railList");
+  host.innerHTML = "";
+  let phase = null;
+  STEPS.forEach((s, i) => {
+    if (s.phase !== phase){
+      phase = s.phase;
+      host.appendChild(el("div", "rail-phase", esc(phase)));
+    }
+    const b = el("button", "rail-item");
+    b.type = "button";
+    b.setAttribute("aria-current", i === state.step ? "true" : "false");
+    b.dataset.state = i === state.step ? "now" : (state.visited.has(i) ? "done" : "todo");
+    b.appendChild(el("span", "rail-num", String(i + 1)));
+    b.appendChild(el("span", "rail-txt", esc(s.title)));
+    b.addEventListener("click", () => goTo(i));
+    host.appendChild(b);
+  });
+
+  const dots = $("navDots");
+  dots.innerHTML = "";
+  STEPS.forEach((s, i) => {
+    const d = el("i");
+    if (i === state.step) d.className = "on";
+    dots.appendChild(d);
+  });
+}
+
+/* ----------------------------------------------------------- step render -- */
+function ranFlag(cmd, node){
+  if (state.ran.some(r => r.cmd === cmd)) node.dataset.ran = "1";
+}
+
+function commandBlock(spec){
+  const wrap = el("div", "cmd");
+  wrap.dataset.cmd = spec.cmd;
+  wrap.tabIndex = 0;
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", "Command: " + spec.cmd);
+
+  wrap.appendChild(el("span", "cmd-ico", "$"));
+
+  const body = el("div", "cmd-body");
+  body.appendChild(el("code", "cmd-text", esc(spec.cmd)));
+  if (spec.note){
+    const note = el("div", "cmd-note");
+    note.innerHTML = spec.note;              /* author markup: <b>, <code> */
+    body.appendChild(note);
+  }
+  wrap.appendChild(body);
+
+  const actions = el("div", "cmd-actions");
+  const run = el("button", "btn primary", "Run");
+  run.type = "button";
+  run.title = "Type this into the real bash terminal";
+  run.addEventListener("click", (e) => { e.stopPropagation(); runCommand(spec.cmd, wrap); });
+
+  const copy = el("button", "btn ghost", "Copy");
+  copy.type = "button";
+  copy.title = "Copy this command";
+  copy.addEventListener("click", (e) => { e.stopPropagation(); copyText(spec.cmd, copy); });
+  actions.appendChild(run);
+  actions.appendChild(copy);
+  wrap.appendChild(actions);
+
+  wrap.addEventListener("keydown", (e) => {
+    if (e.key === "Enter"){ e.preventDefault(); runCommand(spec.cmd, wrap); }
+    else if (e.key.toLowerCase() === "c"){ e.preventDefault(); copyText(spec.cmd, copy); }
+  });
+
+  ranFlag(spec.cmd, wrap);
+  return wrap;
+}
+
+function renderReport(){
+  const frag = document.createDocumentFragment();
+
+  const top = el("div", "report-top");
+  const ring = el("div", "ring");
+  ring.innerHTML =
+    '<svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">' +
+    '<circle class="bg" cx="26" cy="26" r="22"></circle>' +
+    '<circle class="fg" id="ringFg" cx="26" cy="26" r="22" stroke-dasharray="138.2" ' +
+    'stroke-dashoffset="138.2"></circle></svg>';
+  ring.appendChild(el("div", "ring-num", "0/16"));
+  top.appendChild(ring);
+
+  const txt = el("div", "report-top-txt");
+  txt.innerHTML = "<strong>Factual findings</strong><br><span>Q1–Q" + QUESTIONS.length +
+                  " are self-checked against the evidence. Q" + (QUESTIONS.length + 1) + "–Q" +
+                  (QUESTIONS.length + ESSAY.length) + " are graded by your teacher.</span>";
+  top.appendChild(txt);
+
+  const reset = el("button", "btn ghost", "Clear answers");
+  reset.type = "button";
+  reset.addEventListener("click", () => {
+    if (!confirm("Clear every answer field and the self-check results?")) return;
+    state.answers = {}; state.checked = null;
+    LS.set("answers", state.answers); LS.del("checked");
+    renderStep();
+    toast("Answers cleared.");
+  });
+  top.appendChild(reset);
+  frag.appendChild(top);
+
+  const nameBox = el("div", "q");
+  const nameLab = el("label", "q-label");
+  nameLab.setAttribute("for", "f_name");
+  nameLab.innerHTML = '<span class="qid">NAME</span>Analyst name and ID';
+  nameBox.appendChild(nameLab);
+  const name = el("input");
+  name.type = "text"; name.id = "f_name"; name.placeholder = "Your name and student ID";
+  name.value = state.answers.name || "";
+  name.addEventListener("input", () => { state.answers.name = name.value; LS.set("answers", state.answers); });
+  nameBox.appendChild(name);
+  frag.appendChild(nameBox);
+
+  const fs1 = el("fieldset", "fset");
+  fs1.appendChild(el("legend", null,
+                     "Q1–Q" + QUESTIONS.length + " · factual findings (self-checked)"));
+  QUESTIONS.forEach((q, i) => {
+    const box = el("div", "q");
+    box.id = "q-" + q.id;
+    const lab = el("div", "q-label");
+    lab.innerHTML = '<span class="qid">Q' + (i + 1) + '</span>' + esc(q.label);
+    box.appendChild(lab);
+    box.appendChild(el("div", "q-hint", esc(q.hint)));
+    const input = el("input");
+    input.type = "text";
+    input.placeholder = q.ph;
+    input.value = state.answers[q.id] || "";
+    input.addEventListener("input", () => {
+      state.answers[q.id] = input.value;
+      LS.set("answers", state.answers);
+      if (state.checked){ state.checked = null; LS.del("checked"); clearVerdicts(); }
+      updateRing();
+    });
+    box.appendChild(input);
+    box.appendChild(el("div", "verdict"));
+    fs1.appendChild(box);
+  });
+  frag.appendChild(fs1);
+
+  const fs2 = el("fieldset", "fset");
+  fs2.appendChild(el("legend", null,
+                     "Q" + (QUESTIONS.length + 1) + "–Q" +
+                     (QUESTIONS.length + ESSAY.length) + " · written answers (teacher-graded)"));
+  ESSAY.forEach((q, i) => {
+    const box = el("div", "q");
+    box.id = "q-" + q.id;
+    const lab = el("div", "q-label");
+    lab.innerHTML = '<span class="qid">Q' + (QUESTIONS.length + i + 1) + '</span>' + esc(q.label);
+    box.appendChild(lab);
+    box.appendChild(el("div", "q-hint", esc(q.hint)));
+    const ta = el("textarea");
+    ta.rows = q.rows;
+    ta.placeholder = "Write your answer here…";
+    ta.value = state.answers[q.id] || "";
+    ta.addEventListener("input", () => {
+      state.answers[q.id] = ta.value;
+      LS.set("answers", state.answers);
+      updateRing();
+    });
+    box.appendChild(ta);
+    box.appendChild(el("div", "verdict"));
+    fs2.appendChild(box);
+  });
+  frag.appendChild(fs2);
+
+  const row = el("div", "btn-row");
+  const check = el("button", "btn primary", "Check my answers");
+  check.type = "button";
+  check.addEventListener("click", checkAnswers);
+  const pdf = el("button", "btn", "Export PDF report");
+  pdf.type = "button";
+  pdf.addEventListener("click", exportReport);
+  row.appendChild(check);
+  row.appendChild(pdf);
+  frag.appendChild(row);
+
+  const score = el("div", "score");
+  score.id = "scoreBox";
+  score.style.display = state.checked ? "block" : "none";
+  frag.appendChild(score);
+
+  return frag;
+}
+
+function renderStep(){
+  const s = STEPS[state.step];
+  const host = $("stepBody");
+  host.innerHTML = "";
+
+  const head = el("div", "step-head");
+  const crumbs = el("div", "step-crumbs");
+  crumbs.appendChild(el("span", "crumb phase", esc(s.phase)));
+  crumbs.appendChild(el("span", "crumb", "Step " + (state.step + 1) + " of " + STEPS.length));
+  head.appendChild(crumbs);
+  head.appendChild(el("h1", "step-title", esc(s.title)));
+  if (s.goal) head.appendChild(el("p", "step-goal", esc(s.goal)));
+  if (s.tags && s.tags.length){
+    const tags = el("div", "tags");
+    s.tags.forEach(t => tags.appendChild(el("span", "tag", "<b>" + esc(t.id) + "</b> " + esc(t.name))));
+    head.appendChild(tags);
+  }
+  host.appendChild(head);
+
+  const body = el("div", "prose");
+  body.innerHTML = s.body || "";
+  Array.prototype.slice.call(body.querySelectorAll(".cmd")).forEach(node => {
+    const spec = CMDS[Number(node.dataset.cmdidx)] || {cmd: ""};
+    node.replaceWith(commandBlock(spec));
+  });
+  host.appendChild(body);
+
+  if (s.report) host.appendChild(renderReport());
+
+  if (s.checkpoint){
+    const c = el("div", "callout check");
+    c.appendChild(el("div", "co-head", "Checkpoint"));
+    c.appendChild(el("div", "co-body", s.checkpoint));
+    host.appendChild(c);
+  }
+
+  host.appendChild(notesBlock());
+
+  const pct = Math.round(((state.step + 1) / STEPS.length) * 100);
+  $("meterFill").style.width = pct + "%";
+  $("meter").setAttribute("aria-valuenow", String(pct));
+  $("meterLbl").textContent = "Step " + (state.step + 1) + " / " + STEPS.length;
+  $("navLbl").textContent = (state.step + 1) + " / " + STEPS.length;
+  $("btnBack").disabled = state.step === 0;
+  const last = state.step === STEPS.length - 1;
+  $("btnNext").disabled = last;
+  $("btnNext").textContent = last ? "Last step" : "Next →";
+
+  renderRail();
+  if (state.checked) paintVerdicts(state.checked);
+  updateRing();
+}
+
+function notesBlock(){
+  const wrap = el("div", "notes");
+  const head = el("div", "notes-head");
+  head.appendChild(el("span", "eyebrow", "Analyst notes — autosaved, included in the export"));
+  const saved = el("span", "saved", "saved");
+  head.appendChild(saved);
+  wrap.appendChild(head);
+  const ta = el("textarea");
+  ta.placeholder = "Facts, counts, timestamps, and why you believe what you believe…";
+  ta.value = state.notes[state.step] || "";
+  let t = null;
+  ta.addEventListener("input", () => {
+    state.notes[state.step] = ta.value;
+    LS.set("notes", state.notes);
+    saved.classList.add("on");
+    clearTimeout(t);
+    t = setTimeout(() => saved.classList.remove("on"), 1200);
+  });
+  wrap.appendChild(ta);
+  return wrap;
+}
+
+function goTo(i){
+  if (i < 0 || i >= STEPS.length || i === state.step) {
+    if (i === state.step) $("lesson").scrollTo({top:0, behavior:"smooth"});
+    return;
+  }
+  state.step = i;
+  state.visited.add(i);
+  LS.set("step", i);
+  LS.set("visited", Array.from(state.visited));
+  /* The report step is a long form and needs the height; shrink the terminal
+     dock to its minimum while it is showing and restore the real height
+     afterwards, reading the live value so a drag is never undone. */
+  const _root = document.documentElement;
+  if (i === STEPS.length - 1){
+    if (!_root.dataset.dockBeforeReport){
+      _root.dataset.dockBeforeReport =
+        _root.style.getPropertyValue("--dock") || "320px";
+    }
+    _root.style.setProperty("--dock", "128px");
+  } else if (_root.dataset.dockBeforeReport){
+    _root.style.setProperty("--dock", _root.dataset.dockBeforeReport);
+    delete _root.dataset.dockBeforeReport;
+  }
+  fitTerminal();
+  renderStep();
+  $("lesson").scrollTop = 0;
+  const cur = document.querySelector('.rail-item[aria-current="true"]');
+  if (cur && cur.scrollIntoView){
+    try{ cur.scrollIntoView({block:"nearest", inline:"center"}); }catch(e){}
+  }
+}
+const goNext = () => goTo(state.step + 1);
+const goPrev = () => goTo(state.step - 1);
+
+/* ------------------------------------------------------------ self-check -- */
+function checkOne(id, answer){
+  const spec = GROUND[id];
+  if (!spec) return null;
+  const a = String(answer || "").trim();
+  if (!a) return false;
+  const na = norm(a);
+  switch (spec.kind){
+    case "exact": return na === norm(spec.value);
+    case "set":{
+      const want = new Set(spec.value.map(norm));
+      const got = new Set(tokenList(na));
+      return want.size === got.size && Array.from(want).every(x => got.has(x));
+    }
+    case "has":   return na.replace(/\s+/g,"").includes(norm(spec.value));
+    case "all":   return spec.value.every(tok => na.includes(norm(tok)));
+    default:      return null;
+  }
+}
+
+function clearVerdicts(){
+  QUESTIONS.concat(ESSAY).forEach(q => {
+    const box = $("q-" + q.id);
+    if (!box) return;
+    box.removeAttribute("data-verdict");
+    const v = box.querySelector(".verdict");
+    if (v){ v.className = "verdict na"; v.textContent = ""; }
+  });
+}
+
+function paintVerdicts(results){
+  QUESTIONS.forEach(q => {
+    const box = $("q-" + q.id);
+    if (!box) return;
+    const v = box.querySelector(".verdict");
+    if (!(state.answers[q.id] || "").trim()){
+      box.removeAttribute("data-verdict");
+      v.className = "verdict na"; v.textContent = "";
+    } else if (results[q.id]){
+      box.dataset.verdict = "ok";
+      v.className = "verdict ok"; v.textContent = "✓ matches the evidence";
+    } else {
+      box.dataset.verdict = "no";
+      v.className = "verdict no";
+      v.textContent = "⚠ does not match — go back to your evidence in the terminal";
+    }
+  });
+
+  const b17 = $("q-q17");
+  if (b17){
+    const words = (state.answers.q17 || "").trim().split(/\s+/).filter(Boolean).length;
+    const v = b17.querySelector(".verdict");
+    v.className = "verdict na";
+    v.textContent = words ? words + " words written — teacher-graded" : "";
+  }
+  const b18 = $("q-q18");
+  if (b18){
+    const lines = (state.answers.q18 || "").split(/\n+/).filter(x => x.trim().length > 8).length;
+    const v = b18.querySelector(".verdict");
+    v.className = "verdict na";
+    v.textContent = lines ? lines + " separate recommendation" + (lines === 1 ? "" : "s") +
+                            " detected — teacher-graded" : "";
+  }
+}
+
+function checkAnswers(){
+  const results = {};
+  let correct = 0;
+  QUESTIONS.forEach(q => {
+    const ok = checkOne(q.id, state.answers[q.id]);
+    results[q.id] = ok;
+    if (ok) correct++;
+  });
+  state.checked = results;
+  LS.set("checked", results);
+  paintVerdicts(results);
+
+  const box = $("scoreBox");
+  if (box){
+    const missing = QUESTIONS.filter(q => !(state.answers[q.id] || "").trim()).length;
+    box.style.display = "block";
+    box.innerHTML =
+      "<b>Factual self-check: " + correct + " / " + QUESTIONS.length + " correct.</b>" +
+      (missing ? '<span style="color:var(--warn)"> · ' + missing + " unanswered</span>" : "") +
+      '<span class="sub">A learning aid, not your grade — the written answers are marked by your teacher. ' +
+      "Every answer is checked against the same evidence in the terminal, so a flagged answer means " +
+      "the evidence was misread, not the key.</span>";
+  }
+  const lesson = $("lesson");
+  lesson.scrollTo({top: lesson.scrollHeight, behavior:"smooth"});
+  toast(correct + "/" + QUESTIONS.length + " factual answers match the evidence");
+  return {correct, total: QUESTIONS.length, results};
+}
+
+function updateRing(){
+  const done = QUESTIONS.filter(q => (state.answers[q.id] || "").trim()).length;
+  const c = 2 * Math.PI * 22;
+  const fg = $("ringFg");
+  const num = document.querySelector(".ring-num");
+  if (fg) fg.setAttribute("stroke-dashoffset", String(c - (done / QUESTIONS.length) * c));
+  if (num) num.textContent = done + "/" + QUESTIONS.length;
+}
+
+/* --------------------------------------------------------- PDF export ---- */
+function haveNotes(){
+  return Object.keys(state.notes).some(k => (state.notes[k] || "").trim());
+}
+
+function exportReport(){
+  const chk = checkAnswers();
+  const a = state.answers;
+  const name = (a.name || "").trim() || "____________________";
+  const stamp = new Date().toLocaleString();
+
+  const rowsHtml = QUESTIONS.map((q, i) => {
+    const ans = (a[q.id] || "").trim();
+    return '<tr><td class="qn">Q' + (i + 1) + "</td><td>" + esc(q.label) + "</td>" +
+           '<td class="ans">' + (ans ? esc(ans) : '<span class="blank">not answered</span>') +
+           "</td><td class=\"mk\">" + (chk.results[q.id] ? "&#10003;" : "&#9888;") + "</td></tr>";
+  }).join("");
+
+  const noteRows = Object.keys(state.notes)
+    .filter(k => (state.notes[k] || "").trim())
+    .sort((x, y) => Number(x) - Number(y))
+    .map(k => '<div class="note"><span class="note-step">Step ' + (Number(k) + 1) + " · " +
+             esc(STEPS[Number(k)].title) + "</span><br>" +
+             esc(state.notes[k]).replace(/\n/g, "<br>") + "</div>").join("");
+
+  const evidence = state.ran.length
+    ? state.ran.map((r, i) => '<tr><td class="qn">' + (i + 1) + '</td><td class="cmdcell">' +
+        esc(r.cmd) + '</td><td class="stepcell">Step ' + (r.step + 1) + "</td></tr>").join("")
+    : '<tr><td colspan="3" class="blank">No commands were run during this session.</td></tr>';
+
+  let n = 1;
+  const H = () => "<h2>" + (n++) + " &middot; ";
+  const doc =
+'<!DOCTYPE html><html><head><meta charset="utf-8"/>' +
+'<meta name="viewport" content="width=device-width,initial-scale=1"/>' +
+"<title>CTIA incident report — " + LAB.id + "</title><style>" +
+"*{box-sizing:border-box}" +
+'body{font:12pt/1.55 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#14181d;' +
+'  margin:0;padding:30px 34px;background:#fff}' +
+"h1{font-size:17pt;margin:0 0 2px;letter-spacing:-.01em}" +
+"h2{font-size:10.5pt;letter-spacing:.14em;text-transform:uppercase;color:#5a6673;" +
+'  margin:24px 0 8px;padding-bottom:5px;border-bottom:1.5px solid #14181d}' +
+'.sub{color:#5a6673;font-size:9.5pt;margin:0}' +
+".meta{display:flex;flex-wrap:wrap;gap:6px 26px;margin:14px 0 4px;font-size:9.5pt;color:#5a6673}" +
+".meta b{color:#14181d}" +
+"table{width:100%;border-collapse:collapse;font-size:10pt;margin-top:4px}" +
+"th{text-align:left;background:#f2f5f9;font-size:8.5pt;letter-spacing:.1em;text-transform:uppercase;" +
+'  color:#5a6673;padding:7px 9px;border:1px solid #c9d2dc}' +
+"td{padding:7px 9px;border:1px solid #c9d2dc;vertical-align:top}" +
+"td.qn{font-weight:700;width:34px}" +
+"td.mk{text-align:center;width:32px;font-size:12pt}" +
+'td.cmdcell{font:8.6pt/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;word-break:break-all}' +
+"td.stepcell{color:#5a6673;width:76px;font-size:8.6pt;white-space:nowrap}" +
+"td.ans{font-weight:600}" +
+".blank{color:#98a2ad;font-style:italic;font-weight:400}" +
+".essay{border:1px solid #c9d2dc;border-radius:4px;padding:11px 13px;white-space:pre-wrap;" +
+'  background:#fbfcfe;min-height:38px;font-size:10pt}' +
+".note{border-left:2.5px solid #c9d2dc;padding:2px 0 2px 11px;margin:0 0 11px;font-size:9.6pt}" +
+".note-step{font-weight:700;font-size:8.5pt;letter-spacing:.06em;text-transform:uppercase;color:#5a6673}" +
+".box{padding:12px 14px;border:1px solid #14181d;border-radius:4px;background:#f2f5f9;font-size:10pt}" +
+".marks{display:flex;gap:22px;flex-wrap:wrap;font-size:9.6pt;color:#5a6673;margin-top:8px}" +
+".marks span{border-bottom:1px solid #c9d2dc;padding:0 26px 2px 0}" +
+"footer{margin-top:26px;padding-top:9px;border-top:1px solid #c9d2dc;color:#5a6673;" +
+'  font-size:8.5pt;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}' +
+".noprint{display:none}" +
+"@page{margin:14mm}" +
+"@media print{body{padding:0}.noprint{display:none}}" +
+"</style></head><body>" +
+"<h1>Incident report — unconstrained delegation and pass-the-ticket</h1>" +
+'<p class="sub">CTIA guided lab · ' + LAB.id + " · subnet " + LAB.subnet + " · all times " + LAB.tz + "</p>" +
+'<div class="meta">' +
+"<span><b>Analyst:</b> " + esc(name) + "</span>" +
+"<span><b>Submitted:</b> " + esc(stamp) + "</span>" +
+"<span><b>Evidence:</b> 5 log exports · " + "7,456" + " events</span>" +
+"<span><b>Factual self-check:</b> " + chk.correct + "/" + QUESTIONS.length + "</span>" +
+"</div>" +
+H() + "Findings summary</h2>" +
+'<div class="box"><b>' + esc(LAB.title) + "</b><br>An operator holding a standard-user session on a " +
+"workstation coerced a domain administrator into authenticating to that host, then extracted the " +
+"resulting Kerberos ticket from LSASS memory and replayed it as privileged network sessions on three " +
+"servers. No password was known, guessed or cracked at any point, and no exploitation of a software " +
+"vulnerability appears anywhere in the telemetry. The stolen ticket was used to stage a registry hive " +
+"and to move collected data off the network. Elapsed time from the first malicious logon to logoff: 35 " +
+"minutes.</div>" +
+H() + "Factual answers (Q1–Q" + QUESTIONS.length + ")</h2>" +
+'<table><thead><tr><th></th><th>Question</th><th>Student answer</th><th>Auto</th></tr></thead>' +
+"<tbody>" + rowsHtml + "</tbody></table>" +
+'<p class="sub" style="margin-top:6px">&#10003; consistent with the evidence · ' +
+"&#9888; flagged for teacher review.</p>" +
+H() + "Attack chain (Q" + (QUESTIONS.length + 1) + ")</h2>" +
+'<div class="essay">' + (((a["q" + (QUESTIONS.length + 1)] || "").trim())
+    ? esc(a["q" + (QUESTIONS.length + 1)]) : '<span class="blank">not answered</span>') + "</div>" +
+H() + "Containment and remediation (Q" + (QUESTIONS.length + ESSAY.length) + ")</h2>" +
+'<div class="essay">' + (((a["q" + (QUESTIONS.length + ESSAY.length)] || "").trim())
+    ? esc(a["q" + (QUESTIONS.length + ESSAY.length)]) : '<span class="blank">not answered</span>') + "</div>" +
+(haveNotes() ? H() + "Analyst notes</h2>" + noteRows : "") +
+H() + "Commands executed during this session</h2>" +
+'<table><thead><tr><th>#</th><th>Command</th><th>Where</th></tr></thead><tbody>' +
+evidence + "</tbody></table>" +
+H() + "Teacher assessment</h2>" +
+'<div class="box"><div class="marks"><span>Factual accuracy (Q1–Q' + QUESTIONS.length + "): " +
+      chk.correct + "/" + QUESTIONS.length + "</span>" +
+      "<span>Attack chain (Q" + (QUESTIONS.length + 1) + "):</span>" +
+      "<span>Recommendations (Q" + (QUESTIONS.length + ESSAY.length) + "):</span><span>Overall:</span></div>" +
+'<div class="marks" style="margin-top:10px"><span>Signature:</span><span>Date:</span></div></div>' +
+"<footer><span>CTIA guided lab · " + LAB.id + "</span>" +
+"<span>Produced from real log files and a real terminal session</span></footer>" +
+'<p class="noprint" style="margin-top:20px;font-size:10pt;color:#5a6673">' +
+"Use your browser's <b>Save as PDF</b> in the print dialog to save this report.</p>" +
+'<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){window.print();},450);});<\/scr' + "ipt>" +
+"</body></html>";
+
+  const url = URL.createObjectURL(new Blob([doc], {type:"text/html;charset=utf-8"}));
+  const w = window.open(url, "_blank");
+  if (w && w.document){
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast("Report opened — choose “Save as PDF”.");
+  } else {
+    const frame = el("iframe");
+    frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(frame);
+    frame.onload = () => {
+      try{
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      }catch(e){ toast("Pop-ups are blocked — allow them for this page and try again."); }
+      setTimeout(() => frame.remove(), 1500);
+    };
+    frame.src = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast("Opening the print dialog…");
+  }
+}
+/* ===========================================================================
+   PART 3 — THE REAL TERMINAL
+   A genuine bash PTY served by serve.py, discovered automatically. The page
+   never fabricates output: if the lab server is not running, the terminal says
+   so and keeps looking until it is.
+   =========================================================================== */
+const PROBE = "__CTIA_LAB_OK__";
+const TERM = {term:null, fit:null, ws:null, live:false, scanning:false, sweeps:0, timer:null, port:null};
+const isSheet = () => window.matchMedia("(max-width:860px)").matches;
+
+function initTerminal(){
+  const narrow = window.matchMedia("(max-width:860px)").matches;
+  try{
+    TERM.term = new Terminal({
+      fontFamily: '"SF Mono",SFMono-Regular,Menlo,Consolas,monospace',
+      fontSize: narrow ? 11 : 13, lineHeight: 1.25, cursorBlink: true, scrollback: 8000,
+      allowProposedApi: true,
+      theme: {
+        background:"#05080d", foreground:"#d8e6f2", cursor:"#57c8ff",
+        black:"#0b1017", red:"#ff6f6f", green:"#46d38a", yellow:"#f5b73d",
+        blue:"#57c8ff", magenta:"#b39cff", cyan:"#7ee0c8", white:"#d8e6f2",
+        brightBlack:"#5b6b7d", brightRed:"#ff8f8f", brightGreen:"#6fe3a8",
+        brightYellow:"#ffd07a", brightBlue:"#8ad9ff", brightMagenta:"#c9b6ff",
+        brightCyan:"#a5efe0", brightWhite:"#ffffff"
+      }
+    });
+    if (window.FitAddon && FitAddon.FitAddon){
+      TERM.fit = new FitAddon.FitAddon();
+      TERM.term.loadAddon(TERM.fit);
+    }
+  }catch(e){
+    $("connMsg").innerHTML = "The terminal emulator could not start. Make sure " +
+      "<code>vendor_xterm.js</code> is present next to this file.";
+    $("conn").classList.add("on");
+    return;
+  }
+
+  TERM.term.open($("termHost"));
+  fitTerminal();
+  TERM.term.onData(d => {
+    if (TERM.live && TERM.ws && TERM.ws.readyState === 1) TERM.ws.send(d);
+  });
+  window.addEventListener("resize", () => { fitTerminal(); applySheet(false); });
+  if (window.ResizeObserver) new ResizeObserver(() => fitTerminal()).observe($("term"));
+
+  $("btnClear").addEventListener("click", () => send("clear"));
+  $("btnReconnect").addEventListener("click", () => { hardReset(); discover(); });
+  $("shellPill").addEventListener("click", () => { hardReset(); discover(); });
+  $("btnRetry").addEventListener("click", () => { hardReset(); discover(); });
+
+  discover();
+}
+
+function fitTerminal(){
+  if (!TERM.term) return;
+  // Keep the type readable but never so large that a command wraps twice on a phone.
+  const narrow = window.matchMedia("(max-width:860px)").matches;
+  const want = narrow ? 11 : 13;
+  if (TERM.term.options.fontSize !== want){
+    TERM.term.options.fontSize = want;
+  }
+  if (!TERM.fit) return;
+  try{
+    TERM.fit.fit();
+    const d = TERM.fit.proposeDimensions();
+    if (d && d.cols && d.rows) sendResize(d.cols, d.rows);
+  }catch(e){}
+}
+function sendResize(cols, rows){
+  if (!TERM.live || !TERM.ws || TERM.ws.readyState !== 1) return;
+  try{ TERM.ws.send(JSON.stringify({type:"resize", cols:cols, rows:rows})); }catch(e){}
+}
+
+function setStatus(kind, label){
+  const pill = $("shellPill");
+  pill.dataset.state = kind;
+  pill.querySelector(".pill-txt").textContent = label;
+  $("termTitle").innerHTML = kind === "live"
+    ? "bash \u00b7 <b>real shell</b> \u00b7 :" + (TERM.port || "")
+    : "bash \u00b7 <b>no shell</b>";
+  $("conn").classList.toggle("on", kind !== "live");
+  if (kind === "live"){
+    $("connTitle").textContent = "Connected";
+    $("termHost").style.visibility = "visible";
+  } else {
+    $("termHost").style.visibility = "hidden";
+  }
+}
+
+function candidatePorts(){
+  const list = [];
+  if (state.port) list.push(Number(state.port));
+  if (location.protocol === "http:" || location.protocol === "https:"){
+    const p = Number(location.port || (location.protocol === "https:" ? 443 : 80));
+    if (p) list.push(p);
+  }
+  for (let p = 8777; p <= 8800; p++) list.push(p);       // serve.py default range
+  [8080, 8000, 9000, 3000, 5000, 5173, 7777].forEach(p => list.push(p));
+  return list.filter((p, i, a) => p > 0 && p < 65536 && a.indexOf(p) === i);
+}
+
+/* Probe one candidate port. The socket is kept only if a real bash session
+   actually answers the probe — so we never bind to an unrelated local server. */
+function probe(port){
+  return new Promise(resolve => {
+    let ws, settled = false, seen = 0, buf = "";
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(t1); clearTimeout(t2); clearInterval(poll);
+      resolve({port, ok, ws: ok ? ws : null});
+    };
+    const url = "ws://127.0.0.1:" + port + "/term";
+    try{ ws = new WebSocket(url); }catch(e){ resolve({port, ok:false, ws:null}); return; }
+    ws.binaryType = "arraybuffer";
+
+    const t1 = setTimeout(() => finish(seen >= 1), 2600);
+    const t2 = setTimeout(() => finish(false), 4200);
+    const poll = setInterval(() => {
+      if (seen >= 2) finish(true);
+      else if (seen === 1) finish(true);   // marker came back at least once
+    }, 500);
+
+    ws.onopen = () => { try{ ws.send("echo " + PROBE + "\n"); }catch(e){} };
+    ws.onmessage = (ev) => {
+      const data = typeof ev.data === "string" ? ev.data : new TextDecoder().decode(ev.data);
+      buf += data;
+      seen += (buf.split(PROBE).length - 1);
+      if (TERM.term && TERM.term.element) { /* buffer held until confirmed */ }
+    };
+    ws.onerror = () => { try{ ws.close(); }catch(e){} finish(false); };
+    ws.onclose = () => finish(false);
+  });
+}
+
+function adopt(port, ws){
+  TERM.ws = ws;
+  TERM.port = port;
+  TERM.live = true;
+  state.port = port;
+  LS.set("port", port);
+
+  // The probe socket used its own message handler to verify the shell; swap in
+  // the real one so every byte the PTY produces is written to xterm.
+  ws.onmessage = (ev) => {
+    const data = typeof ev.data === "string" ? ev.data : new TextDecoder().decode(ev.data);
+    TERM.term.write(data);
+  };
+  ws.onerror = () => drop();
+  ws.onclose = () => { if (TERM.live) drop(); };
+
+  TERM.term.reset();
+  TERM.term.write(
+    "\x1b[38;5;45mCTIA lab shell\x1b[0m \x1b[2m· real bash in " + LAB.id +
+    " · every command you run here executes for real\x1b[0m\r\n" +
+    "\x1b[2mType a command, or use the Run button on any command in the lesson.\x1b[0m\r\n\r\n");
+  fitTerminal();
+  setStatus("live", "Real bash connected");
+  try{ TERM.term.focus(); }catch(e){}
+}
+
+function drop(){
+  if (!TERM.live) return;
+  TERM.live = false;
+  if (TERM.ws){ try{ TERM.ws.close(); }catch(e){} TERM.ws = null; }
+  TERM.term.write("\r\n\x1b[33m[the lab shell disconnected — looking for it again]\x1b[0m\r\n");
+  setStatus("searching", "Reconnecting to the lab shell…");
+  discover();
+}
+
+function hardReset(){
+  TERM.live = false;
+  if (TERM.ws){ try{ TERM.ws.close(); }catch(e){} TERM.ws = null; }
+}
+
+async function discover(){
+  if (TERM.scanning) return;
+  TERM.scanning = true;
+  setStatus("searching", "Finding the lab shell…");
+  const ports = candidatePorts();
+  const BATCH = 6;
+
+  for (let i = 0; i < ports.length && !TERM.live; i += BATCH){
+    const slice = ports.slice(i, i + BATCH);
+    const results = await Promise.all(slice.map(probe));
+    for (const r of results){
+      if (r.ok && !TERM.live){
+        adopt(r.port, r.ws);
+        break;
+      }
+    }
+    if (TERM.live) break;
+    // Close every rejected socket so a foreign server cannot pile up sessions.
+    results.forEach(r => { if (!r.ok && r.ws){ try{ r.ws.close(); }catch(e){} } });
+  }
+
+  TERM.scanning = false;
+  if (TERM.live){
+    TERM.sweeps = 0;
+    return;
+  }
+
+  TERM.sweeps++;
+  if (TERM.sweeps >= 2){
+    setStatus("down", "Lab shell not found");
+    $("connTitle").textContent = "The lab shell is not running yet";
+    $("connMsg").innerHTML = "This page needs the lab server so the terminal is a <b>real bash " +
+      "shell</b> — that is what makes <code>awk</code>, pipes and <code>grep</code> behave exactly " +
+      "as they do on your own machine. Nothing here is simulated.";
+  } else {
+    setStatus("searching", "Still looking for the lab shell…");
+  }
+  clearTimeout(TERM.timer);
+  TERM.timer = setTimeout(discover, 3200);
+}
+
+function send(text){
+  if (!TERM.live || !TERM.ws || TERM.ws.readyState !== 1){
+    $("conn").classList.add("on");
+    toast("The lab shell is not connected yet — start the lab, then run again.");
+    return false;
+  }
+  TERM.ws.send(text + "\n");
+  try{ TERM.term.focus(); }catch(e){}
+  return true;
+}
+
+function runCommand(cmd, block){
+  if (!send(cmd)) return;
+  if (block) block.dataset.ran = "1";
+  state.ran.push({step: state.step, cmd: cmd, at: Date.now()});
+  if (state.ran.length > 400) state.ran = state.ran.slice(-400);
+  LS.set("ran", state.ran);
+  if (isSheet() && !document.body.classList.contains("sheet-open")) toggleSheet(true);
+}
+
+/* ===========================================================================
+   PART 4 — DOCK RESIZE (desktop) / BOTTOM SHEET (mobile)
+   =========================================================================== */
+const termEl = $("term");
+const termBar = $("termBar");
+const termGrip = $("termGrip");
+let dockH = 320;
+
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+function applySheet(animate){
+  if (!isSheet()) return;
+  const h = termEl.offsetHeight;
+  const bar = termBar.offsetHeight;
+  const y = sheetState.y === undefined ? (h - bar) : sheetState.y;
+  termEl.style.transition = animate ? "" : "none";
+  termEl.style.transform = "translateY(" + y + "px)";
+  document.body.classList.toggle("sheet-open", y < (h - bar) - 6);
+  setTimeout(() => { if (!sheetState.dragging) termEl.style.transition = ""; }, animate ? 300 : 0);
+  fitTerminal();
+}
+
+const sheetState = {y: undefined, dragging:false, startY:0, startOffset:0};
+
+function sheetStops(){
+  const h = termEl.offsetHeight;
+  const bar = termBar.offsetHeight;
+  return [0, Math.round(h * 0.55), h - bar].sort((a, b) => a - b);
+}
+
+function toggleSheet(open){
+  if (!isSheet()) return;
+  const stops = sheetStops();
+  const peek = stops[stops.length - 1];
+  const expanded = sheetState.y === undefined ? peek : sheetState.y;
+  sheetState.y = (open === undefined) ? (expanded < peek - 6 ? peek : stops[1]) : (open ? stops[1] : peek);
+  applySheet(true);
+}
+
+function initDock(){
+  // ---- desktop: drag the grip to resize the docked terminal
+  termGrip.addEventListener("pointerdown", e => {
+    if (isSheet()) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = termEl.offsetHeight;
+    termGrip.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const h = clamp(startH - (ev.clientY - startY), 120, window.innerHeight - 220);
+      dockH = h;
+      document.documentElement.style.setProperty("--dock", h + "px");
+      fitTerminal();
+    };
+    const up = () => {
+      termGrip.removeEventListener("pointermove", move);
+      termGrip.removeEventListener("pointerup", up);
+      fitTerminal();
+    };
+    termGrip.addEventListener("pointermove", move);
+    termGrip.addEventListener("pointerup", up);
+  });
+
+  // ---- mobile: drag the bar to move the bottom sheet
+  termBar.addEventListener("pointerdown", e => {
+    if (!isSheet()) return;
+    if (e.target.closest("button")) return;
+    const h = termEl.offsetHeight;
+    const bar = termBar.offsetHeight;
+    sheetState.dragging = true;
+    sheetState.startY = e.clientY;
+    sheetState.startOffset = sheetState.y === undefined ? (h - bar) : sheetState.y;
+    document.body.classList.add("sheet-dragging");
+    termBar.setPointerCapture(e.pointerId);
+
+    const move = (ev) => {
+      const y = clamp(sheetState.startOffset + (ev.clientY - sheetState.startY), 0, h - bar);
+      sheetState.y = y;
+      applySheet(false);
+    };
+    const up = () => {
+      termBar.removeEventListener("pointermove", move);
+      termBar.removeEventListener("pointerup", up);
+      sheetState.dragging = false;
+      document.body.classList.remove("sheet-dragging");
+      const stops = sheetStops();
+      let best = stops[0];
+      stops.forEach(s => { if (Math.abs(s - sheetState.y) < Math.abs(best - sheetState.y)) best = s; });
+      sheetState.y = best;
+      applySheet(true);
+    };
+    termBar.addEventListener("pointermove", move);
+    termBar.addEventListener("pointerup", up);
+  });
+
+  termBar.addEventListener("click", e => {
+    if (!isSheet() || e.target.closest("button")) return;
+    toggleSheet();
+  });
+  $("btnSheet").addEventListener("click", () => {
+    if (isSheet()) toggleSheet();
+    else {
+      const h = clamp(dockH === 320 ? 460 : dockH, 120, window.innerHeight - 220);
+      document.documentElement.style.setProperty("--dock", h + "px");
+      dockH = h;
+      fitTerminal();
+    }
+  });
+  $("scrim").addEventListener("click", () => toggleSheet(false));
+
+  window.addEventListener("orientationchange", () => setTimeout(() => applySheet(true), 250));
+}
+
+/* ===========================================================================
+   PART 5 — THEME, SHORTCUTS, BOOT
+   =========================================================================== */
+function applyTheme(name){
+  document.documentElement.setAttribute("data-theme", name);
+  LS.set("theme", name);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", name === "light" ? "#eef1f6" : "#090d13");
+}
+function initTheme(){
+  const saved = LS.get("theme", null);
+  const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  applyTheme(saved || (prefersLight ? "light" : "dark"));
+  $("btnTheme").addEventListener("click", () => {
+    applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+}
+
+function initShortcuts(){
+  $("btnNext").addEventListener("click", goNext);
+  $("btnBack").addEventListener("click", goPrev);
+  $("btnHelp").addEventListener("click", () => $("dlgHelp").showModal());
+  document.querySelectorAll("[data-close]").forEach(b =>
+    b.addEventListener("click", () => b.closest("dialog").close()));
+
+  document.addEventListener("keydown", e => {
+    const tag = (e.target.tagName || "").toLowerCase();
+    const typing = tag === "input" || tag === "textarea" || e.target.isContentEditable;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (typing) return;
+    const open = document.querySelector("dialog[open]");
+    if (open && e.key === "Escape") return;
+    if (open) return;
+
+    if (e.key === "ArrowRight"){ e.preventDefault(); goNext(); }
+    else if (e.key === "ArrowLeft"){ e.preventDefault(); goPrev(); }
+    else if (e.key.toLowerCase() === "t"){ e.preventDefault(); $("btnSheet").click(); }
+    else if (e.key === "?"){ e.preventDefault(); $("dlgHelp").showModal(); }
+    else if (/^[1-9]$/.test(e.key)){ e.preventDefault(); goTo(Number(e.key) - 1); }
+  });
+}
+
+function boot(){
+  initTheme();
+  state.visited.add(state.step);
+  LS.set("visited", Array.from(state.visited));
+  renderStep();
+  initDock();
+  initTerminal();
+  initShortcuts();
+  setTimeout(() => applySheet(false), 60);
+}
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
+</script>
+</body>
+</html>
